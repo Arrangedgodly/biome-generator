@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SHARED_STATE,
+  SEED_MAX,
   STATE_VERSION,
   createUrlStateWriter,
   parseHashBody,
@@ -103,6 +104,28 @@ describe('urlState (T13)', () => {
     expect(body).toBe('v=1&seed=0&el=0.5&mo=0.5');
     expect(body.includes('preset')).toBe(false);
     expect(body.startsWith('#')).toBe(false);
+  });
+
+  it('serializes the seed into [0, SEED_MAX] — the wire can never leave the domain (hardening)', () => {
+    // Negative seeds must not render one map and serialize another.
+    const negative: SharedState = {
+      version: STATE_VERSION,
+      seed: -5,
+      elevation: 0.5,
+      moisture: 0.5,
+      preset: null,
+    };
+    expect(serializeState(negative)).toBe('v=1&seed=0&el=0.5&mo=0.5');
+    // Out-of-domain magnitudes clamp instead of writing a value the next
+    // parse would reject (Infinity) or silently change (huge floats).
+    const huge: SharedState = {
+      version: STATE_VERSION,
+      seed: 1e30,
+      elevation: 0.5,
+      moisture: 0.5,
+      preset: null,
+    };
+    expect(serializeState(huge)).toBe(`v=1&seed=${SEED_MAX}&el=0.5&mo=0.5`);
   });
 
   it('returns DEFAULT_SHARED_STATE (never throws) for malformed bodies', () => {

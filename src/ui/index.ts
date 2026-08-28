@@ -14,3 +14,5 @@ export type {
   PanelStage,
   PanelTimer,
 } from './control-panel.ts';
+export { attachCanvasProbe } from './canvas-probe.ts';
+export type { CanvasProbeDeps, CanvasProbeHandle, FieldSample } from './canvas-probe.ts';

@@ -56,8 +56,10 @@ import { StagedAnimation } from './render/animation.ts';
 import type { AnimationEnv, AnimationRendererPort, AnimationStage } from './render/animation.ts';
 import { buildControlPanel } from './ui/control-panel.ts';
 import type { ControlPanelHandle, ControlPanelPorts, PanelControllerEvent } from './ui/control-panel.ts';
+import { attachCanvasProbe } from './ui/canvas-probe.ts';
 import type { PresetDefinition } from './presets/index.ts';
 import { findPreset } from './presets/index.ts';
+import type { ClassifyBiases } from './generation/index.ts';
 import {
   createUrlStateWriter,
   DEFAULT_SHARED_STATE,
@@ -112,6 +114,8 @@ export interface AppControllerPort {
   readonly state: ControlState;
   /** T11 sticky-preset signal: true while preset field-param overrides are live. */
   readonly hasOverrides: boolean;
+  /** Live classification biases (moisture slider) — the probe reads these. */
+  readonly biases: ClassifyBiases;
   setElevation(v: number, opts?: { commit?: boolean }): void;
   commitElevation(): void;
   setMoisture(v: number): void;
@@ -143,10 +147,21 @@ export interface AppAnimationPort {
   readonly playing: boolean;
 }
 
+/**
+ * The renderer slice the Surveyor's Probe reads (`MapRenderer` satisfies it):
+ * live field samples at the CURRENT resolution plus that resolution, so the
+ * probe always describes what is on screen (512² finals, 256² drag previews).
+ */
+export interface ProbeRendererPort {
+  sample(fx: number, fy: number): { elevation: number; moisture: number } | undefined;
+  readonly fieldResolution: number;
+}
+
 /** One controller+renderer stack (what the injectable bundle factory returns). */
 export interface AppBundle {
   controller: AppControllerPort;
-  renderer: AnimationRendererPort;
+  /** Animation surface AND probe read surface (`MapRenderer` satisfies both). */
+  renderer: AnimationRendererPort & ProbeRendererPort;
 }
 
 // ---- T14 injectable effects (all optional, all with real defaults) -----------
@@ -215,6 +230,8 @@ export interface AppHandle {
 interface Stack {
   controller: AppControllerPort;
   animation: AppAnimationPort;
+  /** The bundle's renderer — the probe reads live fields through it. */
+  renderer: ProbeRendererPort;
 }
 
 function readPrefersReducedMotion(): boolean {
@@ -407,7 +424,7 @@ export function startApp(
       // retries/rebuilds leak zero live workers.
       controller.dispose();
     };
-    return { controller, animation };
+    return { controller, animation, renderer };
   };
 
   let stack = buildStack();
@@ -453,21 +470,6 @@ export function startApp(
   };
   eventListeners.add(appListener);
 
-  // ---- boot (T11): restore-from-hash or default-preset auto-generate -------
-  // T3c-fix: the bare branch boots the preset's OWN slider positions (see
-  // `bareBootState`), so first load IS the calibrated continent map; a
-  // stateful URL still wins verbatim (explicit el/mo/preset/seed are applied
-  // as the sharer left them).
-  const bootState: SharedState = readStateFromLocation(loc) ?? bareBootState();
-  activePresetId = bootState.preset; // kept iff applySharedState installs overrides
-  stack.controller.applySharedState({
-    seed: bootState.seed,
-    elevation: bootState.elevation,
-    moisture: bootState.moisture,
-    presetId: bootState.preset,
-  });
-  pushUrlState(); // the state-event push already ran; this pins the boot state
-
   /**
    * Rebuild the stack (fresh worker, D5) and restore the LAST known shared
    * state — seed + sliders + preset — via one `applySharedState` batch. This
@@ -502,6 +504,9 @@ export function startApp(
         activePresetId = preset.id;
         stack.controller.applyPreset(preset);
       },
+      // P1-2 (clarify): the sticky id is the ONE truth for the pressed chip —
+      // the same value the share URL carries, so they can never disagree.
+      activePresetId: () => activePresetId,
       subscribe: (fn) => {
         eventListeners.add(fn);
         return () => {
@@ -549,6 +554,11 @@ export function startApp(
     // is a silent no-op — there is nothing user-actionable to report.
     onExport: (): void => {
       const run = async (): Promise<void> => {
+        // Harden (critique P2-4): settle the reveal before capturing. A
+        // mid-crossfade `toBlob` ships a half-blended frame named like a
+        // final one; `skip()` draws the composed biomes frame synchronously
+        // and is a no-op when nothing is playing.
+        stack.animation.skip();
         const blob = await toBlob(canvas);
         if (blob === null) return;
         const url = createObjectURL(blob);
@@ -566,8 +576,50 @@ export function startApp(
     },
   };
 
-  const panel = buildControlPanel(controls, ports);
+  // Map status lives with the map: the panel drives the stage label, but its
+  // DOM home is the #stage-status caption block under the canvas (beside the
+  // probe reading) — status of the specimen belongs to the specimen.
+  const stageStatusHost = document.querySelector<HTMLElement>('#stage-status');
+  const panel = buildControlPanel(controls, ports, { stageHost: stageStatusHost ?? undefined });
   panel.bindCanvasSkip(canvas);
+
+  // ---- boot (T11): restore-from-hash or default-preset auto-generate -------
+  // T3c-fix: the bare branch boots the preset's OWN slider positions (see
+  // `bareBootState`), so first load IS the calibrated continent map; a
+  // stateful URL still wins verbatim (explicit el/mo/preset/seed are applied
+  // as the sharer left them).
+  //
+  // ORDER (clarify P1-2): the panel must exist before boot fires its state
+  // events — otherwise sliders, seed field, and the preset chip render build
+  // defaults while the URL and the map restore the sharer's state (a
+  // stateful #mo=1 boot showed slider 0.5 against a moisture-1.0 map).
+  const bootState: SharedState = readStateFromLocation(loc) ?? bareBootState();
+  activePresetId = bootState.preset; // kept iff applySharedState installs overrides
+  stack.controller.applySharedState({
+    seed: bootState.seed,
+    elevation: bootState.elevation,
+    moisture: bootState.moisture,
+    presetId: bootState.preset,
+  });
+  pushUrlState(); // the state-event push already ran; this pins the boot state
+
+  // Surveyor's Probe (delight): crosshair + live reading over the specimen.
+  // Getters read the CURRENT stack, so a D5 rebuild (fresh renderer+fields)
+  // re-targets the probe automatically — before the first fields land it
+  // simply stays dark (sample undefined).
+  const probe = attachCanvasProbe(canvas, {
+    sample: (fx, fy) => stack.renderer.sample(fx, fy),
+    fieldResolution: () => stack.renderer.fieldResolution,
+    biases: () => stack.controller.biases,
+  });
+
+  // Harden (critique P1-1): every controller event refreshes the probe's
+  // parked station — a moisture turn re-names the pixel under the parked
+  // crosshair (principle 1: reveal, don't just render), and fresh fields
+  // re-read whatever the station now sits on. Registered AFTER the probe
+  // exists, so boot-time events (no station yet) never reach it; the stable
+  // listener set keeps the subscription alive across D5 rebuilds.
+  eventListeners.add(() => probe.refresh());
 
   return {
     panel,
@@ -576,6 +628,7 @@ export function startApp(
     dispose(): void {
       writer.flush(); // land any coalesced write before tearing everything down
       panel.destroy();
+      probe.destroy();
       disposeStack();
     },
   };

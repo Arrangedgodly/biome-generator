@@ -46,6 +46,20 @@ class FakeController {
 
   applyPreset(preset: PresetDefinition): void {
     this.calls.push({ method: 'applyPreset', preset });
+    // Real-controller contract (map-controller.applyPreset): the sticky id
+    // takes effect and a state echo lands on the preset's own sliders.
+    this.activePreset = preset.id;
+    this.emit({
+      type: 'state',
+      state: { seed: 0, elevation: preset.elevation, moisture: preset.moisture },
+    });
+  }
+
+  /** Sticky preset id — the app's single truth (P1-2); tests flip it by hand. */
+  activePreset: string | null = null;
+
+  activePresetId(): string | null {
+    return this.activePreset;
   }
 
   subscribe(fn: (e: PanelControllerEvent) => void): () => void {
@@ -178,28 +192,94 @@ describe('T10 control panel', () => {
     expect(random).toHaveBeenCalled();
   });
 
-  it('seed input: valid int commits via setSeed; invalid text is ignored and reverts', () => {
+  it('seed input: valid int commits via setSeed; invalid text is ignored, reverts, and shows the rule hint', () => {
     const { panel, controller } = build();
     const seed = panel.elements.seedInput;
+    const hint = panel.elements.seedError;
+    expect(hint.getAttribute('aria-live')).toBe('polite');
+    expect(hint.hidden).toBe(true);
+    expect(seed.getAttribute('autocomplete')).toBe('off');
 
     setAndDispatch(seed, '123', 'change');
     expect(controller.callsOf('setSeed')).toEqual([{ method: 'setSeed', value: 123 }]);
     expect(seed.value).toBe('123');
 
-    // invalid on change → no call, display reverts to last valid
+    // invalid on change → no call, display reverts to last valid, hint explains
     setAndDispatch(seed, 'abc', 'change');
     expect(controller.callsOf('setSeed')).toHaveLength(1);
     expect(seed.value).toBe('123');
+    expect(hint.hidden).toBe(false);
+    expect(hint.textContent).toBe('Seed must be a whole number between 0 and 999,999,999');
+    expect(seed.getAttribute('aria-invalid')).toBe('true');
 
-    // invalid on blur (change never fired) → same revert
+    // a valid commit clears the hint + aria-invalid
+    setAndDispatch(seed, '7', 'change');
+    expect(controller.callsOf('setSeed')).toHaveLength(2);
+    expect(hint.hidden).toBe(true);
+    expect(seed.hasAttribute('aria-invalid')).toBe(false);
+
+    // invalid on blur (change never fired) → same revert + hint
     seed.value = 'xyz';
     seed.dispatchEvent(new Event('blur'));
-    expect(controller.callsOf('setSeed')).toHaveLength(1);
-    expect(seed.value).toBe('123');
+    expect(controller.callsOf('setSeed')).toHaveLength(2);
+    expect(seed.value).toBe('7');
+    expect(hint.hidden).toBe(false);
+
+    // 🎲 roll hides the hint too (a rolled seed is always valid)
+    panel.elements.diceButton.click();
+    expect(hint.hidden).toBe(true);
+    const rolled = seed.value;
 
     // re-typing the same seed is a no-op (no duplicate regeneration)
-    setAndDispatch(seed, '123', 'change');
+    setAndDispatch(seed, rolled, 'change');
+    expect(controller.callsOf('setSeed')).toHaveLength(3);
+  });
+
+  it('seed domain (hardening): decimals, negatives, over-max, empty, and scientific notation', () => {
+    const { panel, controller } = build();
+    const seed = panel.elements.seedInput;
+    const hint = panel.elements.seedError;
+
+    // '1e6' is a million (Number semantics), not parseInt's truncation to 1.
+    setAndDispatch(seed, '1e6', 'change');
+    expect(controller.callsOf('setSeed')).toEqual([{ method: 'setSeed', value: 1_000_000 }]);
+    expect(seed.value).toBe('1000000');
+
+    // '3.7' is honestly rejected instead of silently floored to 3.
+    setAndDispatch(seed, '3.7', 'change');
     expect(controller.callsOf('setSeed')).toHaveLength(1);
+    expect(seed.value).toBe('1000000');
+    expect(hint.hidden).toBe(false);
+
+    // Negative seeds render one map but serialize another — rejected outright.
+    setAndDispatch(seed, '-5', 'change');
+    expect(controller.callsOf('setSeed')).toHaveLength(1);
+    expect(seed.value).toBe('1000000');
+    expect(hint.hidden).toBe(false);
+
+    // Past SEED_MAX (would clamp on the wire and break the shared URL).
+    setAndDispatch(seed, '1000000000', 'change');
+    expect(controller.callsOf('setSeed')).toHaveLength(1);
+    expect(hint.hidden).toBe(false);
+
+    // A 400-digit paste parses to Infinity — rejected, not committed.
+    seed.value = '9'.repeat(400);
+    seed.dispatchEvent(new Event('blur'));
+    expect(controller.callsOf('setSeed')).toHaveLength(1);
+    expect(seed.value).toBe('1000000');
+
+    // Empty never forges seed 0.
+    setAndDispatch(seed, '', 'change');
+    expect(controller.callsOf('setSeed')).toHaveLength(1);
+    expect(seed.value).toBe('1000000');
+
+    // The domain boundary itself commits.
+    setAndDispatch(seed, '999999999', 'change');
+    expect(controller.callsOf('setSeed')).toEqual([
+      { method: 'setSeed', value: 1_000_000 },
+      { method: 'setSeed', value: 999_999_999 },
+    ]);
+    expect(hint.hidden).toBe(true);
   });
 
   it('Generate button calls regenerate() with no seed override', () => {
@@ -232,20 +312,77 @@ describe('T10 control panel', () => {
     expect(animation.skipCount).toBe(2);
   });
 
-  it('stage announcements update the aria-live label; done keeps "Biomes"', () => {
-    const { panel, animation } = build();
+  it('stage announcements update the aria-live label; done settles to "Map ready · seed N"', () => {
+    const { panel, animation, controller } = build();
     const label = panel.elements.stageLabel;
     expect(label.getAttribute('aria-live')).toBe('polite');
     expect(label.textContent).toBe('');
 
+    // lastSeed rides in on the state events (the settled line quotes it).
+    controller.emit({ type: 'state', state: { seed: 128, elevation: 0.3, moisture: 0.5 } });
+
     animation.emitStage('elevation');
-    expect(label.textContent).toBe('Elevation');
+    expect(label.textContent).toBe('Stage: Elevation');
     animation.emitStage('moisture');
-    expect(label.textContent).toBe('Moisture');
+    expect(label.textContent).toBe('Stage: Moisture');
     animation.emitStage('biomes');
-    expect(label.textContent).toBe('Biomes');
+    expect(label.textContent).toBe('Stage: Biomes');
     animation.emitStage('done');
-    expect(label.textContent).toBe('Biomes');
+    expect(label.textContent).toBe('Map ready · seed 128'); // full text, no CSS prefix
+  });
+
+  it('stageHost option re-homes the stage label — map status lives with the map (layout pass)', () => {
+    const controller = new FakeController();
+    const animation = new FakeAnimation();
+    const container = document.createElement('div');
+    document.body.append(container);
+    containers.push(container);
+    const host = document.createElement('div');
+    const panel = buildControlPanel(
+      container,
+      {
+        controller,
+        animation,
+        onRetry: () => {},
+        onShare: () => {},
+        onExport: () => {},
+      },
+      { stageHost: host },
+    );
+
+    expect(host.contains(panel.elements.stageLabel)).toBe(true);
+    expect(container.contains(panel.elements.stageLabel)).toBe(false);
+
+    animation.emitStage('elevation'); // hosted label still announces
+    expect(panel.elements.stageLabel.textContent).toBe('Stage: Elevation');
+    panel.destroy();
+  });
+
+  it('panel topology (layout pass): tune → presets → Generate → outputs, cluster starts on actions and outputs', () => {
+    const { panel } = build();
+    const rows = [...panel.root.children].filter((el) => el.classList.contains('control-row'));
+    expect(rows).toHaveLength(6);
+
+    const summary = rows.map((row) => ({
+      cluster: row.classList.contains('cluster-start'),
+      preset: row.querySelector('[data-preset]') !== null,
+      generate: row.querySelector('#generate-button') !== null,
+      outputs: row.querySelector('#export-button') !== null,
+    }));
+    // DOM order: two slider rows + seed row (tune), presets, Generate, outputs.
+    expect(summary.map((s) => s.preset || s.generate || s.outputs)).toEqual([
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+    ]);
+    // Cluster starts: the actions block (presets) and the outputs block
+    // breathe away from the cluster above; the Generate row does not.
+    expect(summary[3].cluster).toBe(true);
+    expect(summary[4].cluster).toBe(false);
+    expect(summary[5].cluster).toBe(true);
   });
 
   // ---- T16-fix (F1) integration: the REAL StagedAnimation behind the real panel ----
@@ -364,6 +501,26 @@ describe('T10 control panel', () => {
     expect(panel.elements.elevationInput.disabled).toBe(false);
     expect(panel.elements.generateButton.disabled).toBe(false);
     expect(panel.elements.diceButton.disabled).toBe(false);
+  });
+
+  it('error disable hands focus to Try again when the focused control goes dark (hardening)', () => {
+    const { panel, controller } = build();
+    const { seedInput, retryButton } = panel.elements;
+
+    // Focus inside the doomed set → focus lands on the one live control.
+    seedInput.focus();
+    expect(document.activeElement).toBe(seedInput);
+    controller.emit({ type: 'error', error: new Error('boom') });
+    expect(document.activeElement).toBe(retryButton);
+
+    // Recovery, then: focus OUTSIDE the panel is never stolen.
+    controller.emit({ type: 'fields', fields: { resolution: 512 }, final: true });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    controller.emit({ type: 'error', error: new Error('boom') });
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 
   it('state events sync sliders/readouts/seed; a dragged slider ignores programmatic writes', () => {
@@ -508,43 +665,44 @@ describe('T10 control panel', () => {
       expect(h.getAttribute('aria-pressed')).toBe('true');
     });
 
-    it('a manual state event with non-matching slider values clears all pressed state', () => {
+    it('state events render pressed state from activePresetId() — sliders never decide (P1-2)', () => {
       const { panel, controller } = build();
       const [a, c, h] = panel.elements.presetButtons;
       a.click();
       expect(a.getAttribute('aria-pressed')).toBe('true');
 
-      // Manual deviation from the preset's sliders → custom terrain.
+      // Moisture nudged OFF the preset's sliders: the chip STAYS pressed —
+      // the sticky id (and the share URL it feeds) still say archipelago.
+      controller.emit({ type: 'state', state: { seed: 0, elevation: archipelago.elevation, moisture: 0.95 } });
+      expect(a.getAttribute('aria-pressed')).toBe('true');
+
+      // Upstream, an elevation input cleared the overrides and the app's id
+      // went null → chip unpresses (custom terrain), in lockstep with the URL.
+      controller.activePreset = null;
       controller.emit({ type: 'state', state: { seed: 0, elevation: 0.5, moisture: 0.55 } });
       expect(a.getAttribute('aria-pressed')).toBe('false');
       expect(c.getAttribute('aria-pressed')).toBe('false');
       expect(h.getAttribute('aria-pressed')).toBe('false');
     });
 
-    it('a state event matching a preset (2-dec) re-marks it pressed — idempotent with clicks', () => {
+    it('slider coincidence never re-marks a chip — only the id does (P1-2)', () => {
       const { panel, controller } = build();
       const [a, c, h] = panel.elements.presetButtons;
 
-      // The applyPreset echo: controller state lands on the preset's exact
-      // sliders → stays pressed (this is how the real controller confirms).
+      // Exact highlands slider positions with NO id (hand-edited hash that
+      // lost its preset param): stays custom — the chip does not re-derive.
       controller.emit({
         type: 'state',
-        state: { seed: 0, elevation: archipelago.elevation, moisture: archipelago.moisture },
+        state: { seed: 0, elevation: highlands.elevation, moisture: highlands.moisture },
       });
-      expect(a.getAttribute('aria-pressed')).toBe('true');
-      expect(c.getAttribute('aria-pressed')).toBe('false');
       expect(h.getAttribute('aria-pressed')).toBe('false');
 
-      // Repeated matching events are idempotent.
-      controller.emit({
-        type: 'state',
-        state: { seed: 0, elevation: archipelago.elevation, moisture: archipelago.moisture },
-      });
-      expect(a.getAttribute('aria-pressed')).toBe('true');
-
-      // 2-decimal matching: 0.854 rounds onto the archipelago position 0.85.
-      controller.emit({ type: 'state', state: { seed: 0, elevation: 0.854, moisture: 0.55 } });
-      expect(a.getAttribute('aria-pressed')).toBe('true');
+      // The id wins regardless of slider positions.
+      controller.activePreset = 'highlands';
+      controller.emit({ type: 'state', state: { seed: 0, elevation: 0.11, moisture: 0.22 } });
+      expect(h.getAttribute('aria-pressed')).toBe('true');
+      expect(a.getAttribute('aria-pressed')).toBe('false');
+      expect(c.getAttribute('aria-pressed')).toBe('false');
     });
   });
 
@@ -564,20 +722,20 @@ describe('T10 control panel', () => {
       expect(exportCount()).toBe(1);
     });
 
-    it('flashShareSuccess: label + aria-live announce to "Copied!", revert after ~1.5s', () => {
+    it('flashShareSuccess: label + aria-live announce to "Link copied", revert after ~1.5s', () => {
       vi.useFakeTimers();
       const { panel, container } = build();
       const status = container.querySelector('#share-status');
       expect(status?.getAttribute('aria-live')).toBe('polite');
 
       panel.flashShareSuccess();
-      expect(panel.elements.shareButton.textContent).toBe('Copied!');
-      expect(status?.textContent).toBe('Copied!');
+      expect(panel.elements.shareButton.textContent).toBe('Link copied');
+      expect(status?.textContent).toBe('Link copied');
 
       vi.advanceTimersByTime(1499);
-      expect(panel.elements.shareButton.textContent).toBe('Copied!'); // still flashing
+      expect(panel.elements.shareButton.textContent).toBe('Link copied'); // still flashing
       vi.advanceTimersByTime(1);
-      expect(panel.elements.shareButton.textContent).toBe('Share');
+      expect(panel.elements.shareButton.textContent).toBe('Copy link');
       expect(status?.textContent).toBe(''); // announce cleared with the revert
     });
 
@@ -588,9 +746,9 @@ describe('T10 control panel', () => {
       vi.advanceTimersByTime(1000);
       panel.flashShareSuccess(); // restart the window
       vi.advanceTimersByTime(1000); // 2000ms since flash #1 — must NOT have fired
-      expect(panel.elements.shareButton.textContent).toBe('Copied!');
+      expect(panel.elements.shareButton.textContent).toBe('Link copied');
       vi.advanceTimersByTime(500);
-      expect(panel.elements.shareButton.textContent).toBe('Share');
+      expect(panel.elements.shareButton.textContent).toBe('Copy link');
     });
 
     it('showShareFallbackUrl reveals a labeled read-only input with the URL; flash hides it again', () => {
@@ -616,7 +774,7 @@ describe('T10 control panel', () => {
       panel.flashShareSuccess();
       panel.destroy();
       vi.advanceTimersByTime(5000);
-      expect(panel.elements.shareButton.textContent).toBe('Copied!'); // timer was cleared
+      expect(panel.elements.shareButton.textContent).toBe('Link copied'); // timer was cleared
     });
   });
 });

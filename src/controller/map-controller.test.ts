@@ -624,10 +624,22 @@ describe('MapController', () => {
       expect(worker.generateCalls[1].params).toEqual(DEFAULT_FIELD_PARAMS);
     });
 
-    it('applySharedState clamps sliders and floors the seed to a non-negative integer', () => {
-      const { controller } = makeController();
+    it('applySharedState clamps sliders and floors the seed into [0, SEED_MAX] (hardening)', () => {
+      const { controller, worker } = makeController();
       controller.applySharedState({ seed: -3.7, elevation: 5, moisture: -1, presetId: null });
       expect(controller.state).toEqual({ seed: 0, elevation: 1, moisture: 0 });
+      // A hand-edited hash can carry anything finite: past SEED_MAX it clamps
+      // (and the write-back pins the clamped URL, so reload reproduces the
+      // map); non-finite garbage settles on the default seed.
+      controller.applySharedState({ seed: 1e30, elevation: 0.5, moisture: 0.5, presetId: null });
+      expect(worker.generateCalls.at(-1)?.seed).toBe(999_999_999);
+      controller.applySharedState({
+        seed: Number.POSITIVE_INFINITY,
+        elevation: 0.5,
+        moisture: 0.5,
+        presetId: null,
+      });
+      expect(worker.generateCalls.at(-1)?.seed).toBe(0);
     });
 
     it('hasOverrides transitions: applyPreset→true, setMoisture→stays true, setElevation→false', () => {

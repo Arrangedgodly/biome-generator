@@ -11,7 +11,29 @@
       <p class="tagline">Simplex noise, staged into biomes — elevation, moisture, color.</p>
     </header>
     <main id="app">
-      <canvas id="map-canvas" width="512" height="512" aria-label="Generated biome map"></canvas>
+      <!-- The specimen stage: canvas + surveyor's probe (crosshair overlay,
+           readout line, keyboard announcer). The probe interrogates the live
+           fields — position, elevation, moisture, biome — without ever
+           touching the canvas pixels (DOM overlay only, D2 no-readback intact). -->
+      <div id="stage">
+        <canvas
+          id="map-canvas"
+          width="512"
+          height="512"
+          tabindex="0"
+          aria-label="Generated biome map — hover or use the arrow keys to probe terrain"
+        ></canvas>
+        <div id="probe-overlay" aria-hidden="true" hidden>
+          <div class="probe-line probe-v"></div>
+          <div class="probe-line probe-h"></div>
+          <div class="probe-dot"></div>
+        </div>
+        <!-- Caption block: map status (stage label, panel-driven) + probe
+             reading — the specimen's instruments report under the specimen. -->
+        <div id="stage-status"></div>
+        <p id="probe-readout"></p>
+        <p id="probe-announce" class="visually-hidden" aria-live="polite"></p>
+      </div>
       <aside id="controls" aria-label="Map controls"></aside>
     </main>
     <script type="module" src="/src/main.ts"></script>

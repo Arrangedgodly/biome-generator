@@ -14,27 +14,36 @@
  *   `change` → `controller.commitElevation()` (512² release regen).
  * - moisture `input` → `controller.setMoisture(v)` (instant local reclassify).
  * - Generate → `controller.regenerate()`; 🎲 → `setSeed(randomSeed())`;
- *   seed input → `setSeed(parseInt)` when the text is a valid integer
- *   (invalid text is ignored and the display reverts to the last valid seed).
+ *   seed input → `setSeed` when the text is an integer in [0, SEED_MAX]
+ *   (Number semantics: '1e6' commits a million, '3.7' is rejected honestly
+ *   rather than floored); anything else is ignored, the display reverts to
+ *   the last valid seed, and the `#seed-error` hint names the domain.
  * - preset buttons (T12, enabled) → `controller.applyPreset(findPreset(id))`;
  *   the clicked button gets `aria-pressed="true"` (others false), and later
  *   `state` events re-evaluate it: matching a preset's slider positions at 2
  *   decimals re-marks that preset, anything else clears all pressed state
  *   (custom terrain).
  * - `animation.onStageChange` → aria-live stage label ('done' keeps 'Biomes',
- *   the final stage name — no timers, no auto-clear).
+ *   the final stage name — no timers, no auto-clear). The label lives under
+ *   the canvas in production (`options.stageHost`, app.ts passes the
+ *   `#stage-status` caption block) so map status sits with the map; the
+ *   default host is the panel root (tests, standalone use).
  * - Skip button (enabled only while `animation.playing`) and canvas-click
  *   (`bindCanvasSkip`) both call `animation.skip()`.
  * - Share/Export (T14, enabled): Share click → `ports.onShare` and Export
  *   click → `ports.onExport` — the APP owns the flush+copy / download logic
  *   (it holds the URL writer and the location). The panel only routes clicks
- *   and reports the outcome: `flashShareSuccess()` swaps the Share label to
- *   'Copied!' (+ aria-live announce) and reverts after ~1.5s (injectable
+ *   and reports the outcome: `flashShareSuccess()` swaps the Copy-link label
+ *   to 'Link copied' (+ aria-live announce) and reverts after ~1.5s (injectable
  *   `flashTimer`, cleared on destroy); `showShareFallbackUrl(url)` reveals a
  *   labeled read-only input carrying the URL for manual selection when every
  *   programmatic copy path failed.
+ * - seed validation: invalid text on commit is reverted AND explained — the
+ *   `#seed-error` hint (aria-live polite, coral on panel) names the rule
+ *   ("whole number") so the silent revert is never a mystery; it clears on
+ *   the next valid commit or 🎲 roll.
  * - controller `{type:'error'}` → role="alert" region with a friendly message
- *   + Retry (`ports.onRetry` rebuilds the stack, app.ts); the panel is
+ *   + Try again (`ports.onRetry` rebuilds the stack, app.ts); the panel is
  *   disabled meanwhile. `{type:'fields'}` hides the error and re-enables.
  * - `state` events sync slider positions/readouts/seed display; programmatic
  *   slider writes are suppressed while the user is actively dragging that
@@ -43,20 +52,28 @@
 
 import { PRESETS, findPreset } from '../presets/index.ts';
 import type { PresetDefinition } from '../presets/index.ts';
+import { SEED_MAX } from '../state/urlState.ts';
 
-/** Stage names as announced/displayed; 'done' shows the final stage name. */
-const STAGE_TEXT: Record<PanelStage, string> = {
-  elevation: 'Elevation',
-  moisture: 'Moisture',
-  biomes: 'Biomes',
-  done: 'Biomes',
+/** Stage lines as announced/displayed (full text — the label has no CSS prefix). */
+const STAGE_TEXT: Record<Exclude<PanelStage, 'done'>, string> = {
+  elevation: 'Stage: Elevation',
+  moisture: 'Stage: Moisture',
+  biomes: 'Stage: Biomes',
 };
 
-/** Friendly, non-technical error copy (town-hall: friendly error + retry). */
-export const WORKER_FAILED_MESSAGE = 'Worker failed — retrying';
+/**
+ * Friendly, non-technical error copy (town-hall: friendly error + retry).
+ * Names what failed and reassures that tuning survives the retry (rebuild
+ * re-applies seed + sliders + preset) — never internal "worker" jargon, and
+ * never a false claim that a retry is already running (it is manual).
+ */
+export const WORKER_FAILED_MESSAGE = 'Map generation failed — your settings are preserved';
+
+/** Base label of the copy-link button (also the flash revert target). */
+export const SHARE_BUTTON_TEXT = 'Copy link';
 
 /** Share-button flash (T14): transient success copy + revert delay. */
-export const SHARE_FLASH_TEXT = 'Copied!';
+export const SHARE_FLASH_TEXT = 'Link copied';
 export const SHARE_FLASH_MS = 1500;
 
 /**
@@ -95,6 +112,14 @@ export interface ControlPanelPorts {
     regenerate(seed?: number): void;
     /** T12 preset apply: structural payload — the controller batches sliders + overrides + ONE regen. */
     applyPreset(preset: PresetDefinition): void;
+    /**
+     * The AUTHORITATIVE active preset id (sticky; null = custom terrain).
+     * Pressed state renders from this alone and is never re-derived from
+     * slider positions — one source shared with the share URL and the
+     * controller's override flag, so chip, link, and truth cannot disagree
+     * (critique P1-2).
+     */
+    activePresetId(): string | null;
     subscribe(fn: (e: PanelControllerEvent) => void): () => void;
   };
   animation: {
@@ -121,6 +146,8 @@ export interface ControlPanelElements {
   moistureReadout: HTMLSpanElement;
   seedInput: HTMLInputElement;
   diceButton: HTMLButtonElement;
+  /** Seed validation hint (aria-live, hidden unless the last commit was invalid). */
+  seedError: HTMLParagraphElement;
   generateButton: HTMLButtonElement;
   skipButton: HTMLButtonElement;
   presetButtons: HTMLButtonElement[];
@@ -145,9 +172,9 @@ export interface ControlPanelHandle {
   /** Wire canvas-click → skip, but only while the animation is playing. */
   bindCanvasSkip(canvas: HTMLCanvasElement): void;
   /**
-   * T14 share success feedback: Share label → 'Copied!' (+ aria-live announce),
-   * hides any shown fallback, reverts after `SHARE_FLASH_MS` via the (injectable)
-   * flash timer. Calling again resets the revert timer.
+   * T14 share success feedback: Copy-link label → 'Link copied' (+ aria-live
+   * announce), hides any shown fallback, reverts after `SHARE_FLASH_MS` via the
+   * (injectable) flash timer. Calling again resets the revert timer.
    */
   flashShareSuccess(): void;
   /**
@@ -172,6 +199,7 @@ function isControlState(v: unknown): v is { seed: number; elevation: number; moi
 export function buildControlPanel(
   container: HTMLElement,
   ports: ControlPanelPorts,
+  options: { stageHost?: HTMLElement } = {},
 ): ControlPanelHandle {
   const randomSeed = ports.randomSeed ?? defaultRandomSeed;
   // Lazy setTimeout/clearTimeout references so vi.useFakeTimers can intercept.
@@ -203,6 +231,7 @@ export function buildControlPanel(
   seedInput.type = 'text';
   seedInput.id = 'seed-input';
   seedInput.inputMode = 'numeric';
+  seedInput.autocomplete = 'off'; // a seed is not a form value; keep autofill out
   seedInput.value = '0';
   const seedLabel = makeLabel('seed-input', 'Seed');
   const diceButton = document.createElement('button');
@@ -223,23 +252,19 @@ export function buildControlPanel(
     return button;
   });
 
-  const exportButton = makeActionButton('export-button', 'Export');
+  const exportButton = makeActionButton('export-button', 'Export PNG');
   exportButton.dataset.action = 'export';
-  const shareButton = makeActionButton('share-button', 'Share');
+  const shareButton = makeActionButton('share-button', SHARE_BUTTON_TEXT);
   shareButton.dataset.action = 'share';
 
   // T14 share outcome surfaces: a visually-hidden aria-live announcer (the
-  // 'Copied!' flash must be heard, not just seen) and the manual-copy
+  // 'Link copied' flash must be heard, not just seen) and the manual-copy
   // fallback — a labeled read-only input that only appears when both copy
   // paths failed.
   const shareStatus = document.createElement('span');
   shareStatus.id = 'share-status';
   shareStatus.setAttribute('aria-live', 'polite');
-  shareStatus.style.position = 'absolute';
-  shareStatus.style.width = '1px';
-  shareStatus.style.height = '1px';
-  shareStatus.style.overflow = 'hidden';
-  shareStatus.style.clipPath = 'inset(50%)';
+  shareStatus.className = 'visually-hidden'; // out of flow: Export/Share stay symmetric
   shareStatus.textContent = '';
 
   const shareFallbackInput = document.createElement('input');
@@ -250,7 +275,23 @@ export function buildControlPanel(
   shareFallback.id = 'share-fallback';
   shareFallback.className = 'share-fallback';
   shareFallback.hidden = true;
-  shareFallback.append(makeLabel('share-fallback-input', 'Share this link'), shareFallbackInput);
+  // Failure copy: name what happened (automatic copy failed) + the manual way
+  // out — the input arrives pre-selected, so ⌘C/Ctrl+C works immediately.
+  shareFallback.append(
+    makeLabel('share-fallback-input', "Couldn't copy automatically — copy this link:"),
+    shareFallbackInput,
+  );
+
+  /**
+   * Seed validation hint (aria-live): shown when committed seed text is not a
+   * whole number — the silent display revert alone would be a mystery. Hidden
+   * again on the next valid commit or 🎲 roll.
+   */
+  const seedError = document.createElement('p');
+  seedError.id = 'seed-error';
+  seedError.className = 'field-error';
+  seedError.setAttribute('aria-live', 'polite');
+  seedError.hidden = true;
 
   const stageLabel = document.createElement('p');
   stageLabel.id = 'stage-label';
@@ -260,7 +301,7 @@ export function buildControlPanel(
 
   const errorMessage = document.createElement('span');
   errorMessage.id = 'error-message';
-  const retryButton = makeActionButton('retry-button', 'Retry');
+  const retryButton = makeActionButton('retry-button', 'Try again');
   const errorRegion = document.createElement('div');
   errorRegion.id = 'error-region';
   errorRegion.className = 'error-region';
@@ -268,17 +309,27 @@ export function buildControlPanel(
   errorRegion.hidden = true;
   errorRegion.append(errorMessage, retryButton);
 
+  // Panel topology (layout pass): three clusters — tune (sliders + seed),
+  // act (presets + Generate), output (Export/Copy link) — with the cluster
+  // starts breathing 1.25rem from the group above (.cluster-start). The
+  // stage label leaves the panel for the map's caption block (stageHost).
+  const presetsRow = row(...presetButtons);
+  presetsRow.classList.add('cluster-start');
+  const outputsRow = row(exportButton, shareButton, shareStatus);
+  outputsRow.classList.add('cluster-start');
+
   root.append(
     row(elevationSlider.label, elevationSlider.input, elevationReadout),
     row(moistureSlider.label, moistureSlider.input, moistureReadout),
     row(seedLabel, seedInput, diceButton),
+    seedError,
+    presetsRow,
     row(generateButton, skipButton),
-    row(...presetButtons),
-    row(exportButton, shareButton, shareStatus),
+    outputsRow,
     shareFallback,
-    stageLabel,
     errorRegion,
   );
+  (options.stageHost ?? root).append(stageLabel);
   container.append(root);
 
   // Flatten the slider helpers' {input,label} bundles to the elements object.
@@ -289,6 +340,7 @@ export function buildControlPanel(
     moistureReadout,
     seedInput,
     diceButton,
+    seedError,
     generateButton,
     skipButton,
     presetButtons,
@@ -337,6 +389,17 @@ export function buildControlPanel(
     errorMessage.textContent = message;
     errorRegion.hidden = false;
     setEnabled(false);
+    // Focus resilience (hardening): disabling a control strips focus to
+    // <body>, stranding keyboard/screen-reader users at the top of the page.
+    // If the focus is about to go dark, hand it to the one control that
+    // stays live.
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      disableTargets.includes(active as HTMLInputElement | HTMLButtonElement)
+    ) {
+      retryButton.focus();
+    }
   }
 
   function hideError(): void {
@@ -364,7 +427,7 @@ export function buildControlPanel(
     shareStatus.textContent = SHARE_FLASH_TEXT; // aria-live announce
     flashHandle = flashTimer.set(() => {
       flashHandle = null;
-      shareButton.textContent = 'Share';
+      shareButton.textContent = SHARE_BUTTON_TEXT;
       shareStatus.textContent = '';
     }, SHARE_FLASH_MS);
   }
@@ -377,28 +440,6 @@ export function buildControlPanel(
     }
   }
 
-  /** 2-decimal slider comparison — the resolution the URL wire carries (T13). */
-  function matchesPresetSliders(
-    preset: PresetDefinition,
-    elevation: number,
-    moisture: number,
-  ): boolean {
-    return (
-      elevation.toFixed(2) === preset.elevation.toFixed(2) &&
-      moisture.toFixed(2) === preset.moisture.toFixed(2)
-    );
-  }
-
-  /**
-   * Re-derive the pressed preset from a state event: exact (2-dec) slider
-   * match on one of the registry presets re-marks it pressed; any manual
-   * deviation from the active preset clears all pressed state (custom).
-   */
-  function syncPressedPreset(elevation: number, moisture: number): void {
-    const match = PRESETS.find((p) => matchesPresetSliders(p, elevation, moisture));
-    setPressedPreset(match?.id ?? null);
-  }
-
   // ---- controller events ----------------------------------------------------
   function syncState(e: PanelControllerEvent): void {
     if (e.type !== 'state') return;
@@ -409,7 +450,9 @@ export function buildControlPanel(
     elevationReadout.textContent = e.state.elevation.toFixed(2);
     moistureReadout.textContent = e.state.moisture.toFixed(2);
     if (document.activeElement !== seedInput) seedInput.value = String(e.state.seed);
-    syncPressedPreset(e.state.elevation, e.state.moisture);
+    // P1-2: pressed state comes from the sticky id the URL carries — never
+    // from slider coincidence.
+    setPressedPreset(ports.controller.activePresetId());
   }
 
   const onControllerEvent = (e: PanelControllerEvent): void => {
@@ -430,7 +473,10 @@ export function buildControlPanel(
 
   // ---- animation stages -----------------------------------------------------
   const onStage = (stage: PanelStage): void => {
-    setStageLabel(STAGE_TEXT[stage]);
+    // The settled line names the outcome and pins the determinism promise:
+    // what is on screen is "seed N" — exactly what a share link reproduces.
+    if (stage === 'done') setStageLabel(`Map ready · seed ${lastSeed}`);
+    else setStageLabel(STAGE_TEXT[stage]);
     refreshSkipButton();
   };
 
@@ -460,12 +506,39 @@ export function buildControlPanel(
     draggingMoisture = false;
   });
 
+  /**
+   * Explain the silent revert: names the rule the text broke. The domain is
+   * stated in full so the boundary is knowable before typing (hardening),
+   * formatted for scanning (clarify).
+   */
+  const SEED_ERROR_TEXT = `Seed must be a whole number between 0 and ${SEED_MAX.toLocaleString('en-US')}`;
+
+  function showSeedError(): void {
+    seedError.textContent = SEED_ERROR_TEXT;
+    seedError.hidden = false;
+    seedInput.setAttribute('aria-invalid', 'true');
+  }
+
+  function hideSeedError(): void {
+    seedError.hidden = true;
+    seedError.textContent = '';
+    seedInput.removeAttribute('aria-invalid');
+  }
+
   const commitSeed = (): void => {
-    const parsed = Number.parseInt(seedInput.value.trim(), 10);
-    if (Number.isNaN(parsed)) {
+    const raw = seedInput.value.trim();
+    // Number() semantics over parseInt (hardening): '1e6' means a million,
+    // '3.7' is honestly rejected instead of silently floored, and the empty
+    // string never forges seed 0. Domain: integers in [0, SEED_MAX] — one
+    // rule across panel, controller, and wire, so a seed cannot change value
+    // between commit, URL, and restore.
+    const parsed = raw === '' ? Number.NaN : Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > SEED_MAX) {
       seedInput.value = String(lastSeed); // invalid → ignore + revert display
+      showSeedError(); // …and say why the text snapped back
       return;
     }
+    hideSeedError();
     if (parsed === lastSeed) {
       seedInput.value = String(parsed);
       return;
@@ -481,7 +554,15 @@ export function buildControlPanel(
     const seed = randomSeed();
     lastSeed = seed;
     seedInput.value = String(seed);
+    hideSeedError(); // a rolled seed is always valid
     ports.controller.setSeed(seed);
+    // Delight: the one-shot tumble restarts on every roll (class re-add after
+    // animationend; the global reduced-motion guard disables the keyframes).
+    diceButton.classList.remove('tumbling');
+    diceButton.classList.add('tumbling');
+  });
+  listen(diceButton, 'animationend', () => {
+    diceButton.classList.remove('tumbling');
   });
 
   listen(generateButton, 'click', () => {
@@ -494,8 +575,9 @@ export function buildControlPanel(
     listen(button, 'click', () => {
       const preset = findPreset(button.dataset.preset ?? null);
       if (preset === null) return; // buttons are built from the registry — unreachable
+      // No optimistic pressed-marking: the controller's state echo (with the
+      // app's sticky id now set) renders it — one path, one truth (P1-2).
       ports.controller.applyPreset(preset);
-      setPressedPreset(preset.id);
     });
   }
 

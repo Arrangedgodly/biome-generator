@@ -16,6 +16,16 @@
 /** Wire-format version. Bump + add a migration branch in `parseHashBody`. */
 export const STATE_VERSION = 1 as const;
 
+/**
+ * Seed domain upper bound (hardening): 999,999,999 — nine digits, far above
+ * the 🎲 range (0..999,999). One constant rules all three layers so a seed
+ * can never change value between the panel, the controller, and the wire:
+ * an unbounded seed breaks determinism at the edges (negative seeds render
+ * one map and serialize another; digit strings past float range parse to
+ * Infinity, which the wire rejects by resetting the WHOLE state).
+ */
+export const SEED_MAX = 999_999_999;
+
 export interface SharedState {
   version: typeof STATE_VERSION;
   /** Integer ≥ 0. */
@@ -69,13 +79,14 @@ function parseFiniteNumber(raw: string): number {
 /**
  * Compact hash body (no leading '#'): `v=1&seed=123&el=0.5&mo=0.75&preset=continent`.
  * Sliders are rounded to 2 decimals with trailing zeros trimmed; the seed is
- * floored to a non-negative integer; `preset` is omitted when null (or when a
- * caller passes a value that could not have come from a valid hash anyway).
+ * floored into the domain [0, SEED_MAX] (what the panel and controller already
+ * guarantee — a belt-and-braces clamp so no caller can serialize a seed the
+ * next parse would reject or silently change); `preset` is omitted when null.
  */
 export function serializeState(state: SharedState): string {
   const parts = [
     `v=${String(STATE_VERSION)}`,
-    `seed=${String(Math.max(0, Math.floor(state.seed)))}`,
+    `seed=${String(Math.min(SEED_MAX, Math.max(0, Math.floor(state.seed))))}`,
     `el=${formatSlider(state.elevation)}`,
     `mo=${formatSlider(state.moisture)}`,
   ];

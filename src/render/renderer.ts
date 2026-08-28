@@ -58,6 +58,31 @@ export class MapRenderer {
   }
 
   /**
+   * Resolution of the currently cached fields (0 before any `setFields`) —
+   * 512² on final frames, 256² during elevation-drag previews. The surveyor's
+   * probe maps its coordinates through this, so its readings always describe
+   * exactly what is on screen.
+   */
+  get fieldResolution(): number {
+    return this.fields?.resolution ?? 0;
+  }
+
+  /**
+   * Field-space sample for the surveyor's probe (delight pass): reads the
+   * cached elevation/moisture arrays at integer pixel coordinates, clamped
+   * into bounds. Pure array reads — `getImageData` is still never called
+   * (D2's no-readback rule), and undefined before the first `setFields`.
+   */
+  sample(fx: number, fy: number): { elevation: number; moisture: number } | undefined {
+    if (this.fields === undefined) return undefined;
+    const r = this.fields.resolution;
+    const x = Math.min(Math.max(Math.floor(fx), 0), r - 1);
+    const y = Math.min(Math.max(Math.floor(fy), 0), r - 1);
+    const i = y * r + x;
+    return { elevation: this.fields.elevation[i], moisture: this.fields.moisture[i] };
+  }
+
+  /**
    * Caches new fields and (re)allocates every mode's pixel buffer, ImageData,
    * and offscreen canvas at the fields' resolution. All composed flags reset —
    * modes recompose lazily on next draw/crossfade, or eagerly via

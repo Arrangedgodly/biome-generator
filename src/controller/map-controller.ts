@@ -30,6 +30,7 @@
  */
 import { DEFAULT_FIELD_PARAMS } from '../generation/index.ts';
 import type { ClassifyBiases, FieldParams, Fields } from '../generation/index.ts';
+import { SEED_MAX } from '../state/urlState.ts';
 import { SupersededError } from '../worker/client.ts';
 import { findPreset } from '../presets/index.ts';
 
@@ -340,7 +341,13 @@ export class MapController {
     presetId: string | null;
   }): void {
     if (this.disposed) return;
-    this.seedValue = Math.max(0, Math.floor(s.seed));
+    // Seed clamps into the domain [0, SEED_MAX] (hardening): a hand-edited
+    // hash can carry anything finite, and the write-back pins the clamped
+    // value, so the URL the visitor ends on reproduces the map they see.
+    // Non-finite garbage settles on the default seed 0.
+    this.seedValue = Number.isFinite(s.seed)
+      ? Math.min(SEED_MAX, Math.max(0, Math.floor(s.seed)))
+      : 0;
     this.elevationValue = clamp01(s.elevation);
     this.moistureValue = clamp01(s.moisture);
     const preset = findPreset(s.presetId);

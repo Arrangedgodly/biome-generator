@@ -9,14 +9,20 @@
 // panel, so preset clicks exercise the full wiring chain.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startApp, DEFAULT_BOOT_PRESET, bareBootState } from './app.ts';
-import type { AppHandle, AppAnimationPort, AppControllerPort, StartAppOptions } from './app.ts';
+import type {
+  AppHandle,
+  AppAnimationPort,
+  AppControllerPort,
+  ProbeRendererPort,
+  StartAppOptions,
+} from './app.ts';
 import type { AnimationEnv, AnimationRendererPort, AnimationStage } from './render/animation.ts';
 import type { ControlPanelHandle, PanelControllerEvent } from './ui/control-panel.ts';
 import type { ControlState } from './controller/map-controller.ts';
 import type { PresetDefinition } from './presets/index.ts';
 import { findPreset } from './presets/index.ts';
-import { DEFAULT_FIELD_PARAMS } from './generation/index.ts';
-import type { FieldParams } from './generation/index.ts';
+import { DEFAULT_FIELD_PARAMS, NO_BIASES } from './generation/index.ts';
+import type { ClassifyBiases, FieldParams } from './generation/index.ts';
 import { parseHashBody } from './state/urlState.ts';
 import type { LocationPort } from './state/urlState.ts';
 
@@ -55,6 +61,7 @@ type SharedApply = {
 class FakeController implements AppControllerPort {
   state: ControlState = { seed: 0, elevation: 0.5, moisture: 0.5 };
   hasOverrides = false;
+  biases: ClassifyBiases = NO_BIASES;
   readonly sharedCalls: SharedApply[] = [];
   readonly otherCalls: string[] = [];
   private readonly listeners = new Set<(e: PanelControllerEvent) => void>();
@@ -157,10 +164,19 @@ class FakeAnimation implements AppAnimationPort {
   }
 }
 
-/** Renderer double: satisfies the animation port, counts calls. */
-class FakeRenderer implements AnimationRendererPort {
+/** Renderer double: satisfies the animation + probe ports, counts calls. */
+class FakeRenderer implements AnimationRendererPort, ProbeRendererPort {
   draws = 0;
   crossfades = 0;
+  /** Probe surface: resolution + sample the smoke test sets by hand. */
+  nextResolution = 0;
+  nextSample: { elevation: number; moisture: number } | undefined = undefined;
+  get fieldResolution(): number {
+    return this.nextResolution;
+  }
+  sample(): { elevation: number; moisture: number } | undefined {
+    return this.nextSample;
+  }
   draw(): void {
     this.draws += 1;
   }
@@ -222,7 +238,31 @@ function boot(
   const capturedEnvs: AnimationEnv[] = [];
   const loc = new FakeLocation(hash);
   const scheduler = new ManualScheduler();
+  // Probe skeleton (mirrors index.html's #stage): one per boot — the probe
+  // queries the document, so stale skeletons from earlier boots are removed.
+  for (const stale of document.querySelectorAll('#stage')) stale.remove();
+  const stage = document.createElement('div');
+  stage.id = 'stage';
   const canvas = document.createElement('canvas');
+  canvas.id = 'map-canvas';
+  const overlay = document.createElement('div');
+  overlay.id = 'probe-overlay';
+  overlay.hidden = true;
+  for (const cls of ['probe-v', 'probe-h', 'probe-dot']) {
+    const line = document.createElement('div');
+    line.className = cls;
+    overlay.append(line);
+  }
+  const readout = document.createElement('p');
+  readout.id = 'probe-readout';
+  const statusHost = document.createElement('div');
+  statusHost.id = 'stage-status'; // mirrors index.html (stage label lives here)
+  const announce = document.createElement('p');
+  announce.id = 'probe-announce';
+  announce.setAttribute('aria-live', 'polite'); // mirrors index.html
+  announce.className = 'visually-hidden';
+  stage.append(canvas, overlay, statusHost, readout, announce);
+  document.body.append(stage);
   const container = document.createElement('div');
   document.body.append(container);
   containers.push(container);
@@ -267,7 +307,74 @@ function presetButton(h: Harness, id: string): HTMLButtonElement {
 afterEach(() => {
   for (const c of containers) c.remove();
   containers.length = 0;
+  for (const stale of document.querySelectorAll('#stage')) stale.remove();
   vi.restoreAllMocks();
+});
+
+describe('surveyor\'s probe wiring (delight)', () => {
+  it('boots with the stage label hosted in the #stage-status caption block (layout pass)', () => {
+    boot('');
+    const hosted = document.querySelector('#stage-status #stage-label');
+    expect(hosted).not.toBeNull(); // map status lives with the map
+    expect(hosted?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('focus + arrow keys probe the live renderer: reading + announcement; blur clears', () => {
+    const h = boot('');
+    const readout = document.querySelector<HTMLElement>('#probe-readout');
+    const announce = document.querySelector<HTMLElement>('#probe-announce');
+    const overlay = document.querySelector<HTMLElement>('#probe-overlay');
+    expect(readout).not.toBeNull();
+    expect(announce?.getAttribute('aria-live')).toBe('polite');
+    expect(overlay?.hasAttribute('hidden')).toBe(true);
+
+    // No fields yet (boot race): the instrument stays dark.
+    h.canvas.dispatchEvent(new Event('focus'));
+    expect(readout!.textContent).toBe('');
+    expect(overlay?.hasAttribute('hidden')).toBe(true);
+
+    // Fields land: focus probes the center of a 4×4 field, announcing the
+    // classifier's answer through the polite live region.
+    h.renderer.nextResolution = 4;
+    h.renderer.nextSample = { elevation: 0.75, moisture: 0.6 }; // → Forest
+    h.canvas.dispatchEvent(new Event('focus'));
+    expect(readout!.textContent).toBe('2, 2 · elev 0.75 · moist 0.60 · Forest');
+    expect(announce!.textContent).toBe('Forest at 2, 2 — elevation 0.75, moisture 0.60');
+    expect(overlay?.hasAttribute('hidden')).toBe(false);
+
+    // Arrow keys step the probe (Shift = ×8) and re-report.
+    h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }));
+    expect(readout!.textContent).toBe('1, 2 · elev 0.75 · moist 0.60 · Forest');
+    h.canvas.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowUp', shiftKey: true, cancelable: true }),
+    );
+    expect(readout!.textContent).toBe('1, 0 · elev 0.75 · moist 0.60 · Forest');
+
+    // Harden: blur PARKS the instrument — the reading survives moving focus
+    // to the sliders (the probe/moisture coupling depends on it).
+    h.canvas.dispatchEvent(new Event('blur'));
+    expect(readout!.textContent).toBe('1, 0 · elev 0.75 · moist 0.60 · Forest');
+    expect(overlay?.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('harden P1-1: controller state events refresh the parked probe — the moisture dial re-names the pixel', () => {
+    const h = boot('');
+    const readout = document.querySelector<HTMLElement>('#probe-readout');
+    h.renderer.nextResolution = 4;
+    h.renderer.nextSample = { elevation: 0.75, moisture: 0.6 }; // Forest
+
+    // Park a station (keyboard focus probes the center of the 4×4 field),
+    // then walk away to the sliders — blur no longer retracts the reading.
+    h.canvas.dispatchEvent(new Event('focus'));
+    expect(readout!.textContent).toContain('Forest');
+    h.canvas.dispatchEvent(new Event('blur'));
+
+    // The moisture dial turns: the controller's state event re-reads the
+    // SAME station through the live bias getter (app.ts wires the refresh).
+    h.controller.biases = { seaLevelBias: 0, moistureBias: 0.3 }; // m 0.6 → 0.9
+    h.controller.emit({ type: 'state', state: { seed: 0, elevation: 0.3, moisture: 0.8 } });
+    expect(readout!.textContent).toBe('2, 2 · elev 0.75 · moist 0.60 · Taiga');
+  });
 });
 
 describe('startApp (T11 first-load experience)', () => {
@@ -416,11 +523,58 @@ describe('startApp (T11 first-load experience)', () => {
       expect(last?.includes('preset=')).toBe(false);
     });
 
+    it('clarify P1-2: the pressed chip reads the same sticky id as the URL — lockstep, never slider coincidence', () => {
+      const h = boot('');
+      const continentChip = h.panel.elements.presetButtons.find(
+        (b) => b.dataset.preset === 'continent',
+      )!;
+      expect(continentChip.getAttribute('aria-pressed')).toBe('true'); // boot preset
+
+      // Moisture tuned far off the preset's sliders: chip STAYS pressed and
+      // the URL keeps the preset — one truth, both directions.
+      h.controller.setMoisture(0.95);
+      h.scheduler.fireAll();
+      expect(continentChip.getAttribute('aria-pressed')).toBe('true');
+      expect(h.loc.urls.at(-1)).toContain('preset=continent');
+
+      // Elevation input clears overrides upstream: chip and URL drop it together.
+      h.controller.setElevation(0.4);
+      h.scheduler.fireAll();
+      expect(continentChip.getAttribute('aria-pressed')).toBe('false');
+      expect(h.loc.urls.at(-1)?.includes('preset=')).toBe(false);
+
+      // Dragging back to the preset's exact sliders must NOT re-press the
+      // chip — coincidence is not selection.
+      h.controller.setElevation(0.3);
+      h.controller.setMoisture(0.5);
+      h.scheduler.fireAll();
+      expect(continentChip.getAttribute('aria-pressed')).toBe('false');
+    });
+
     it('seed changes flow into the URL through the same state-event push', () => {
       const h = boot('');
       h.controller.setSeed(4242);
       h.scheduler.fireAll();
       expect(h.loc.urls.at(-1)).toBe('#v=1&seed=4242&el=0.3&mo=0.5&preset=continent');
+    });
+
+    it('clarify P1-2 (boot order): a stateful URL restores sliders, seed field, AND chip — not build defaults', () => {
+      const h = boot('#v=1&seed=9&el=0.8&mo=0.25&preset=highlands');
+      const el = h.panel.elements.elevationInput as HTMLInputElement;
+      const mo = h.panel.elements.moistureInput as HTMLInputElement;
+      expect(el.value).toBe('0.8'); // the sharer's terrain, not the panel default
+      expect(mo.value).toBe('0.25');
+      expect(h.panel.elements.seedInput.value).toBe('9');
+      const chip = h.panel.elements.presetButtons.find((b) => b.dataset.preset === 'highlands')!;
+      expect(chip.getAttribute('aria-pressed')).toBe('true');
+
+      // Bare boot: continent chip pressed, preset's own slider positions.
+      const bare = boot('');
+      const continentChip = bare.panel.elements.presetButtons.find(
+        (b) => b.dataset.preset === 'continent',
+      )!;
+      expect(continentChip.getAttribute('aria-pressed')).toBe('true');
+      expect((bare.panel.elements.elevationInput as HTMLInputElement).value).toBe('0.3');
     });
   });
 
@@ -523,7 +677,7 @@ describe('startApp (T11 first-load experience)', () => {
       expect(h.loc.urls).toEqual(['#v=1&seed=7&el=0.3&mo=0.5&preset=continent']);
 
       await flushMicrotasks();
-      expect(h.panel.elements.shareButton.textContent).toBe('Copied!');
+      expect(h.panel.elements.shareButton.textContent).toBe('Link copied');
       expect(h.panel.elements.shareFallback.hidden).toBe(true);
     });
 
@@ -541,7 +695,7 @@ describe('startApp (T11 first-load experience)', () => {
       await flushMicrotasks();
 
       expect(execCommands).toEqual(['copy']);
-      expect(h.panel.elements.shareButton.textContent).toBe('Copied!');
+      expect(h.panel.elements.shareButton.textContent).toBe('Link copied');
       expect(h.panel.elements.shareFallback.hidden).toBe(true); // legacy path worked
     });
 
@@ -564,7 +718,7 @@ describe('startApp (T11 first-load experience)', () => {
       expect(input?.value).toBe(
         'http://localhost:3000/#v=1&seed=0&el=0.3&mo=0.5&preset=continent',
       );
-      expect(shareButton.textContent).toBe('Share'); // no success flash on failure
+      expect(shareButton.textContent).toBe('Copy link'); // no success flash on failure
     });
 
     it('getShareUrl injection replaces the URL builder verbatim', async () => {
@@ -618,6 +772,9 @@ describe('startApp (T11 first-load experience)', () => {
 
       expect(toBlobCanvases).toEqual([h.canvas]); // exports the live canvas
       expect(order).toEqual(['toBlob', 'createObjectURL', 'click', 'revoke']); // revoke AFTER click
+      // Harden (P2-4): export settles the reveal first — skip() ran before
+      // the capture (synchronously, ahead of the awaited toBlob).
+      expect(h.animations[0]!.skipCount).toBe(1);
       const anchor = clickedAnchors[0];
       expect(anchor?.download).toBe('biome-generator-42.png');
       expect(anchor?.getAttribute('href')).toBe('blob:fake-url');

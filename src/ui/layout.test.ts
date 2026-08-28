@@ -60,6 +60,7 @@ function makePorts(): ControlPanelPorts {
       setSeed: noop,
       regenerate: noop,
       applyPreset: noop,
+      activePresetId: () => null,
       subscribe: () => () => {},
     },
     animation: {
@@ -76,23 +77,53 @@ function makePorts(): ControlPanelPorts {
 describe('index.html skeleton', () => {
   const doc = new DOMParser().parseFromString(indexHtml, 'text/html');
 
-  it('has a 512×512 labeled canvas and a labeled controls aside, canvas first, inside main#app', () => {
+  it('has a 512×512 focusable canvas inside the #stage probe skeleton, controls aside second, inside main#app', () => {
     const app = doc.querySelector('#app');
     expect(app).not.toBeNull();
     const children = [...app!.children];
-    expect(children.map((el) => el.id)).toEqual(['map-canvas', 'controls']);
+    expect(children.map((el) => el.id)).toEqual(['stage', 'controls']);
+
+    const stage = doc.querySelector('#stage');
+    expect(stage?.tagName).toBe('DIV');
 
     const canvas = doc.querySelector('#map-canvas') as HTMLCanvasElement | null;
     expect(canvas).not.toBeNull();
     expect(canvas!.tagName).toBe('CANVAS');
     expect(canvas!.getAttribute('width')).toBe('512');
     expect(canvas!.getAttribute('height')).toBe('512');
-    expect(canvas!.getAttribute('aria-label')).toBe('Generated biome map');
+    // The canvas is keyboard-probeable: focusable, and its label says so.
+    expect(canvas!.getAttribute('tabindex')).toBe('0');
+    expect(canvas!.getAttribute('aria-label')).toBe(
+      'Generated biome map — hover or use the arrow keys to probe terrain',
+    );
 
     const aside = doc.querySelector('#controls');
     expect(aside).not.toBeNull();
     expect(aside!.tagName).toBe('ASIDE');
     expect(aside!.getAttribute('aria-label')).toBe('Map controls');
+  });
+
+  it('carries the surveyor\'s probe surfaces: aria-hidden crosshair, caption block, reserved readout, polite announcer', () => {
+    const overlay = doc.querySelector('#probe-overlay');
+    expect(overlay).not.toBeNull();
+    expect(overlay!.getAttribute('aria-hidden')).toBe('true');
+    for (const cls of ['probe-v', 'probe-h', 'probe-dot']) {
+      expect(overlay!.querySelector(`.${cls}`), `missing .${cls}`).not.toBeNull();
+    }
+
+    // Caption block between overlay and probe reading: the panel-driven
+    // stage label lives here in production (map status with the map).
+    const statusHost = doc.querySelector('#stage-status');
+    expect(statusHost).not.toBeNull();
+    expect(statusHost!.tagName).toBe('DIV');
+
+    const readout = doc.querySelector('#probe-readout');
+    expect(readout).not.toBeNull();
+    expect(readout!.tagName).toBe('P');
+
+    const announce = doc.querySelector('#probe-announce');
+    expect(announce?.getAttribute('aria-live')).toBe('polite');
+    expect(announce?.classList.contains('visually-hidden')).toBe(true);
   });
 
   it('has the app header, viewport meta, title, and the module script that loads main.ts (and with it style.css)', () => {
@@ -176,7 +207,10 @@ describe('stylesheet (src/style.css)', () => {
 
   it('keeps the responsive + reduced-motion guards and a square canvas', () => {
     expect(stylesheet).toContain('@media (max-width: 640px)');
-    expect(stylesheet).toContain('max-width: 100%');
+    // Anti-scroll guard is structural: the row never wraps and the stage
+    // may shrink below its basis (min-width: 0) instead of forcing overflow.
+    expect(stylesheet).toContain('flex-wrap: nowrap');
+    expect(stylesheet).toContain('min-width: 0');
     expect(stylesheet).toContain('aspect-ratio: 1 / 1');
     expect(stylesheet).toContain('prefers-reduced-motion');
   });

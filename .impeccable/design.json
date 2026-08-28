@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-27T22:00:00Z",
+  "title": "Design System: Procedural Biome Generator",
+  "extensions": {
+    "colorMeta": {
+      "surveyors-ocean": {
+        "role": "primary",
+        "displayName": "Surveyor's Ocean",
+        "canonical": "#20658c",
+        "tonalRamp": ["#0a2331", "#11324a", "#16425f", "#1a5276", "#20658c", "#2f7ba6", "#4a94bd", "#7ab6d6"]
+      },
+      "surveyors-ocean-bright": {
+        "role": "primary",
+        "displayName": "Surveyor's Ocean, Bright",
+        "canonical": "#3d8ab8",
+        "tonalRamp": ["#12293a", "#1a3b52", "#234e6b", "#2d6285", "#3d8ab8", "#5fa3c8", "#86beda", "#b0d8e9"]
+      },
+      "night-sediment": {
+        "role": "neutral",
+        "displayName": "Night Sediment",
+        "canonical": "#111827",
+        "tonalRamp": ["#060a12", "#0b111d", "#111827", "#1a2333", "#253044", "#33405a", "#4a587784", "#6b7a94"]
+      },
+      "raised-sediment": {
+        "role": "neutral",
+        "displayName": "Raised Sediment",
+        "canonical": "#1f2937",
+        "tonalRamp": ["#0b0f16", "#121822", "#1a2230", "#1f2937", "#2b3648", "#3b4759", "#4e5b6e", "#6b7889"]
+      },
+      "sediment-edge": {
+        "role": "neutral",
+        "displayName": "Sediment Edge",
+        "canonical": "#374151",
+        "tonalRamp": ["#161a21", "#20242e", "#2a2f3b", "#374151", "#48505f", "#5c6574", "#75808f", "#96a0af"]
+      },
+      "driftwood": {
+        "role": "neutral",
+        "displayName": "Driftwood",
+        "canonical": "#e5e7eb",
+        "tonalRamp": ["#33363b", "#52555c", "#73767e", "#979aa2", "#bcbfc6", "#d4d6dc", "#e5e7eb", "#f4f5f8"]
+      },
+      "driftwood-muted": {
+        "role": "neutral",
+        "displayName": "Driftwood, Muted",
+        "canonical": "#9ca3af",
+        "tonalRamp": ["#2c2f35", "#454a53", "#5f6670", "#7a828d", "#9ca3af", "#b4bac4", "#ccd1d9", "#e5e8ed"]
+      },
+      "coral-warn": {
+        "role": "state",
+        "displayName": "Coral Warn",
+        "canonical": "#fca5a5",
+        "tonalRamp": ["#3f1a1a", "#5c2626", "#7a3434", "#994545", "#b95858", "#da6e6e", "#f08a8a", "#fca5a5"]
+      },
+      "undertow": {
+        "role": "state",
+        "displayName": "Undertow",
+        "canonical": "#7f1d1d",
+        "tonalRamp": ["#2a0808", "#420f0f", "#5a1515", "#7f1d1d", "#9a2c2c", "#b64444", "#cd6464", "#e39494"]
+      }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title", "purpose": "The h1, once, centered in the header." },
+      "body": { "displayName": "Body", "purpose": "Seed input and primary button text." },
+      "label": { "displayName": "Label", "purpose": "Slider labels, tagline, stage line, quiet buttons, error copy." },
+      "readout": { "displayName": "Readout", "purpose": "Live slider values, right-aligned, tabular numerals." }
+    },
+    "shadows": [
+      { "name": "the-lamp", "value": "0 4px 24px rgba(0, 0, 0, 0.5)", "purpose": "Under the map canvas only — the single shadow in the system (The Single Shadow Rule)." }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "150ms ease (background-color, border-color)", "purpose": "Quiet-button and primary-button hover/feedback transitions. The only chrome motion; the staged canvas animation owns everything else." }
+    ],
+    "breakpoints": [
+      { "name": "stack", "value": "640px", "purpose": "Below this the canvas/controls row stacks; layout remains usable at 375px." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one filled action (Generate). Ocean fill, white text, weight 600.",
+      "html": "<button class=\"ds-btn-primary\">Generate</button>",
+      "css": ".ds-btn-primary { min-height: 2.5rem; padding: 0.5rem 0.75rem; font: inherit; font-weight: 600; color: #ffffff; background: var(--accent, #20658c); border: 1px solid var(--accent, #20658c); border-radius: 8px; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease; } .ds-btn-primary:hover { background: var(--accent-bright, #3d8ab8); border-color: var(--accent-bright, #3d8ab8); } .ds-btn-primary:focus-visible { outline: 3px solid var(--accent-bright, #3d8ab8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Presets, Export, Share — cut-out fill, muted text; hover brightens the border, never the fill.",
+      "html": "<button class=\"ds-btn-quiet\">Continent</button>",
+      "css": ".ds-btn-quiet { min-height: 2.5rem; padding: 0.5rem 0.75rem; font: inherit; font-size: 0.875rem; color: var(--text-muted, #9ca3af); background: var(--panel-inset, #111827); border: 1px solid var(--panel-edge, #374151); border-radius: 8px; cursor: pointer; transition: border-color 150ms ease; } .ds-btn-quiet:hover { border-color: var(--accent-bright, #3d8ab8); } .ds-btn-quiet:focus-visible { outline: 3px solid var(--accent-bright, #3d8ab8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Icon Button (dice)",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Square 2.5rem quiet button carrying the 🎲 randomize-seed action.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"Randomize seed\">🎲</button>",
+      "css": ".ds-btn-icon { width: 2.5rem; min-height: 2.5rem; padding: 0; font-size: 1.125rem; line-height: 1; color: var(--text, #e5e7eb); background: var(--panel-inset, #111827); border: 1px solid var(--panel-edge, #374151); border-radius: 8px; cursor: pointer; transition: border-color 150ms ease; } .ds-btn-icon:hover { border-color: var(--accent-bright, #3d8ab8); } .ds-btn-icon:focus-visible { outline: 3px solid var(--accent-bright, #3d8ab8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Seed Input",
+      "kind": "input",
+      "refersTo": "input-seed",
+      "description": "Numeric seed entry — cut-out field, tabular-friendly text.",
+      "html": "<input class=\"ds-input-seed\" type=\"text\" inputmode=\"numeric\" value=\"42\" aria-label=\"Seed\">",
+      "css": ".ds-input-seed { min-height: 2.5rem; padding: 0 0.625rem; font: inherit; font-size: 0.9375rem; color: var(--text, #e5e7eb); background: var(--panel-inset, #111827); border: 1px solid var(--panel-edge, #374151); border-radius: 6px; } .ds-input-seed:focus-visible { outline: 3px solid var(--accent-bright, #3d8ab8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Slider Row",
+      "kind": "custom",
+      "refersTo": "slider-row",
+      "description": "The signature control: muted label, native ocean-accented range, tabular readout.",
+      "html": "<div class=\"ds-slider-row\"><label for=\"ds-elev\">Elevation</label><input id=\"ds-elev\" type=\"range\" min=\"0\" max=\"1\" step=\"0.01\" value=\"0.3\"><output>0.30</output></div>",
+      "css": ".ds-slider-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; } .ds-slider-row label { flex: 0 0 4.75em; font-size: 0.8125rem; color: var(--text-muted, #9ca3af); } .ds-slider-row input[type='range'] { flex: 1 1 auto; min-height: 2.5rem; accent-color: var(--accent, #20658c); } .ds-slider-row output { flex: 0 0 2.5em; text-align: right; font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--text-muted, #9ca3af); } .ds-slider-row input:focus-visible { outline: 3px solid var(--accent-bright, #3d8ab8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Stage Label",
+      "kind": "custom",
+      "refersTo": "stage-label",
+      "description": "Reserved-height status line; the 'Stage: ' prefix comes from CSS, not content.",
+      "html": "<p class=\"ds-stage-label\">Biomes</p>",
+      "css": ".ds-stage-label { margin: 0; min-height: 1.5em; font-size: 0.875rem; color: var(--text-muted, #9ca3af); } .ds-stage-label:not(:empty)::before { content: 'Stage: '; }"
+    },
+    {
+      "name": "Error Region",
+      "kind": "custom",
+      "refersTo": "error-region",
+      "description": "Worker-failure surface: coral-on-undertow with an inline retry action. Never pure red.",
+      "html": "<div class=\"ds-error-region\" role=\"alert\"><span>Map generation hit a snag.</span><button class=\"ds-error-retry\">Retry</button></div>",
+      "css": ".ds-error-region { display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.75rem; background: var(--danger-bg, #7f1d1d); border: 1px solid var(--danger-edge, #b91c1c); border-radius: 8px; color: var(--danger-text, #fca5a5); font-size: 0.875rem; } .ds-error-retry { min-height: 2.25rem; padding: 0.25rem 0.75rem; font: inherit; color: var(--danger-text, #fca5a5); background: transparent; border: 1px solid currentColor; border-radius: 6px; cursor: pointer; } .ds-error-retry:focus-visible { outline: 3px solid var(--accent-bright, #3d8ab8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Control Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "The only card in the product: raised sediment, 1px edge, 10px radius, 0.875rem internal stack.",
+      "html": "<aside class=\"ds-panel\"><div class=\"ds-slider-row\" style=\"padding:0.25rem 0\"><label>Elevation</label><input type=\"range\" value=\"0.3\"><output>0.30</output></div><button class=\"ds-btn-primary\" style=\"width:100%\">Generate</button></aside>",
+      "css": ".ds-panel { display: flex; flex-direction: column; gap: 0.875rem; padding: 1rem; background: var(--panel, #1f2937); border: 1px solid var(--panel-edge, #374151); border-radius: 10px; }"
+    },
+    {
+      "name": "The Specimen (map canvas)",
+      "kind": "custom",
+      "refersTo": "specimen",
+      "description": "The one elevated object: 1/1 aspect, 10px radius, the system's single shadow, pixel-crisp rendering. Its fill here is a stand-in for the generated map.",
+      "html": "<canvas class=\"ds-specimen\" width=\"16\" height=\"16\" role=\"img\" aria-label=\"Generated biome map\"></canvas>",
+      "css": ".ds-specimen { width: 240px; height: 240px; aspect-ratio: 1 / 1; border-radius: 10px; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); image-rendering: pixelated; background: repeating-conic-gradient(#20658c 0% 25%, #1f2937 0% 50%) 0 0 / 60px 60px; cursor: pointer; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Cartographer's Light Table",
+    "overview": "A dark workroom where one luminous map lies under examination. The instruments around it — sliders, seed, presets — are deliberately quiet: flat tonal surfaces, no shadows, muted labels, a single ocean accent doing all the speaking. The map canvas is the only thing in the room with color, depth, and motion. This is not a dashboard that happens to contain a picture; it is a specimen table built to frame one specimen.\n\nThe chrome's entire palette is derived from the specimen itself: the accent is the map's ocean color (#20658c), pressed into service for the primary action and focus rings. Neutrals are deep sediment grays that recede. The one shadow in the system lives under the canvas — the lamp above the light table — and nothing else is ever lifted.",
+    "keyCharacteristics": [
+      "Dark tonal chrome; color belongs to the map, not the interface",
+      "Exactly one elevated object: the canvas specimen",
+      "Instrument-grade controls: touch-height (2.5rem), native widgets, tabular readouts",
+      "Motion is rationed — 150ms state transitions in the chrome; all real motion belongs to the staged reveal",
+      "Pixel-crisp presentation: nearest-neighbor upscale, no smoothing anywhere"
+    ],
+    "rules": [
+      { "name": "The Loud Specimen Rule", "body": "The chrome carries no saturated color except Surveyor's Ocean, and only on the primary action, focus, and slider fill. Every other hue in the interface comes from the generated map itself.", "section": "colors" },
+      { "name": "The Cut-Out Rule", "body": "Inset surfaces (inputs, quiet buttons) reuse the page background value (#111827) rather than introducing a new tone — they are holes in the panel, not objects on it.", "section": "colors" },
+      { "name": "The Single Voice Rule", "body": "One family, five sizes. Never introduce a display font, a monospace accent, or letter-spaced uppercase labels.", "section": "typography" },
+      { "name": "The Single Shadow Rule", "body": "The specimen is lifted; the instruments never are. If a future surface feels like it needs elevation, it is either the canvas or it is wrong.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep exactly one primary action per screen, filled with Surveyor's Ocean.",
+      "Do give quiet buttons a border-color change on hover — never a fill change.",
+      "Do use tabular-nums for every value that updates live (readouts, seed).",
+      "Do keep all touch targets ≥ 2.5rem and outlines at 3px / 2px offset when focused.",
+      "Do let the canvas own all motion and color; new chrome motion stays at ~150ms ease and stops there."
+    ],
+    "donts": [
+      "Don't add shadows anywhere except under the map canvas (The Single Shadow Rule).",
+      "Don't introduce a second accent hue or any saturated chrome color beyond Surveyor's Ocean and its bright twin (The Loud Specimen Rule).",
+      "Don't add fonts, weights outside {400, 600, 650}, or uppercase letter-spaced labels.",
+      "Don't smooth the canvas — pixelated rendering is the material, not a bug.",
+      "Don't replace native sliders/inputs with custom widgets; nativeness is the accessibility strategy."
+    ]
+  }
+}
