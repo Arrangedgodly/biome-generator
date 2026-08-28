@@ -224,8 +224,12 @@ export function buildControlPanel(
 
   const elevationSlider = makeSlider('elevation-input', 'Elevation');
   const moistureSlider = makeSlider('moisture-input', 'Moisture');
-  const elevationReadout = makeReadout('0.50');
-  const moistureReadout = makeReadout('0.50');
+  const elevationReadout = makeReadout('elevation-readout', '0.50');
+  const moistureReadout = makeReadout('moisture-readout', '0.50');
+  // Polish: the numeric readouts are formally paired to their sliders so
+  // assistive tech can reach the same 2-decimal value sighted users read.
+  elevationSlider.input.setAttribute('aria-describedby', 'elevation-readout');
+  moistureSlider.input.setAttribute('aria-describedby', 'moisture-readout');
 
   const seedInput = document.createElement('input');
   seedInput.type = 'text';
@@ -461,6 +465,7 @@ export function buildControlPanel(
       return;
     }
     if (e.type === 'error') {
+      setStageLabel(''); // the alert region owns the story now, not the busy cue
       showError(WORKER_FAILED_MESSAGE);
       return;
     }
@@ -472,6 +477,19 @@ export function buildControlPanel(
   };
 
   // ---- animation stages -----------------------------------------------------
+  /**
+   * Busy cue (polish): generate-class inputs land on a blank canvas for the
+   * beat before the first stage frame — the reserved line says the machine
+   * is working, in the world's own verb. The first stage announcement
+   * ("Stage: Elevation") replaces it; an error clears it (the alert region
+   * takes over the story).
+   */
+  const SURVEYING_TEXT = 'Surveying…';
+
+  function surveying(): void {
+    setStageLabel(SURVEYING_TEXT);
+  }
+
   const onStage = (stage: PanelStage): void => {
     // The settled line names the outcome and pins the determinism promise:
     // what is on screen is "seed N" — exactly what a share link reproduces.
@@ -545,6 +563,7 @@ export function buildControlPanel(
     }
     lastSeed = parsed;
     seedInput.value = String(parsed);
+    surveying(); // a new seed is a generate-class arrival — show the beat
     ports.controller.setSeed(parsed);
   };
   listen(seedInput, 'change', commitSeed);
@@ -555,6 +574,7 @@ export function buildControlPanel(
     lastSeed = seed;
     seedInput.value = String(seed);
     hideSeedError(); // a rolled seed is always valid
+    surveying();
     ports.controller.setSeed(seed);
     // Delight: the one-shot tumble restarts on every roll (class re-add after
     // animationend; the global reduced-motion guard disables the keyframes).
@@ -566,6 +586,7 @@ export function buildControlPanel(
   });
 
   listen(generateButton, 'click', () => {
+    surveying();
     ports.controller.regenerate();
   });
 
@@ -577,6 +598,7 @@ export function buildControlPanel(
       if (preset === null) return; // buttons are built from the registry — unreachable
       // No optimistic pressed-marking: the controller's state echo (with the
       // app's sticky id now set) renders it — one path, one truth (P1-2).
+      surveying(); // preset apply is a generate-class arrival
       ports.controller.applyPreset(preset);
     });
   }
@@ -648,8 +670,9 @@ export function buildControlPanel(
     return { input, label: makeLabel(id, name) };
   }
 
-  function makeReadout(text: string): HTMLSpanElement {
+  function makeReadout(id: string, text: string): HTMLSpanElement {
     const readout = document.createElement('span');
+    readout.id = id;
     readout.className = 'readout';
     readout.textContent = text;
     return readout;

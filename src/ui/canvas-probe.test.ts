@@ -7,7 +7,7 @@
 // are the REAL pure functions: these tests assert the probe reports the
 // classifier's actual answer, not a caption.
 import { afterEach, describe, expect, it } from 'vitest';
-import { attachCanvasProbe } from './canvas-probe.ts';
+import { attachCanvasProbe, PROBE_PLACEHOLDER } from './canvas-probe.ts';
 import type { CanvasProbeDeps, CanvasProbeHandle } from './canvas-probe.ts';
 import { NO_BIASES } from '../generation/index.ts';
 import type { ClassifyBiases } from '../generation/index.ts';
@@ -170,17 +170,34 @@ describe('surveyor\'s probe (pointer)', () => {
     const probe = attachCanvasProbe(canvas, world.deps);
     handles.push(probe);
     probe.refresh();
-    expect(readout.textContent).toBe('');
+    expect(readout.textContent).toBe(PROBE_PLACEHOLDER);
     expect(overlay.hidden).toBe(true);
   });
 
-  it('stays dark before any fields exist (boot race / dead stack)', () => {
+  it('stays dark before any fields exist (boot race / dead stack) — placeholder shows', () => {
     const { canvas, readout, overlay } = mountSkeleton();
     const world = makeWorld(0);
     handles.push(attachCanvasProbe(canvas, world.deps));
+    expect(readout.textContent).toBe(PROBE_PLACEHOLDER); // the empty state
     pointerMove(canvas, 100, 50);
-    expect(readout.textContent).toBe('');
+    expect(readout.textContent).toBe(PROBE_PLACEHOLDER); // still nothing truer to say
     expect(overlay.hidden).toBe(true);
+  });
+
+  it('onboard: the line starts as the teaching placeholder, then a reading replaces it for good', () => {
+    const { canvas, readout } = mountSkeleton();
+    const world = makeWorld(4);
+    const probe = attachCanvasProbe(canvas, world.deps);
+    handles.push(probe);
+    expect(readout.textContent).toBe(PROBE_PLACEHOLDER);
+
+    pointerMove(canvas, 100, 50);
+    expect(readout.textContent).not.toBe(PROBE_PLACEHOLDER);
+
+    // Parking means a reading never yields the line back — the placeholder
+    // is strictly the pre-first-use empty state.
+    canvas.dispatchEvent(new Event('pointerleave'));
+    expect(readout.textContent).not.toBe(PROBE_PLACEHOLDER);
   });
 
   it('live biases change the reading: the moisture slider re-names the pixel', () => {
@@ -270,6 +287,6 @@ describe('surveyor\'s probe (lifecycle)', () => {
     pointerMove(canvas, 100, 50);
     canvas.dispatchEvent(new Event('focus'));
     key(canvas, 'ArrowLeft');
-    expect(readout.textContent).toBe('');
+    expect(readout.textContent).toBe(PROBE_PLACEHOLDER); // back to the empty state
   });
 });

@@ -121,9 +121,25 @@ describe('index.html skeleton', () => {
     expect(readout).not.toBeNull();
     expect(readout!.tagName).toBe('P');
 
+    // The map's key (onboard): collapsed details under the caption group,
+    // swatches populated from BIOMES at boot — data-driven, never hand-written.
+    const legend = doc.querySelector('#biome-legend');
+    expect(legend?.tagName).toBe('DETAILS');
+    expect(legend?.querySelector('summary')?.textContent).toBe('Biome legend');
+    expect(legend?.querySelector('#legend-swatches')).not.toBeNull();
+
     const announce = doc.querySelector('#probe-announce');
     expect(announce?.getAttribute('aria-live')).toBe('polite');
     expect(announce?.classList.contains('visually-hidden')).toBe(true);
+  });
+
+  it('carries the portfolio exit ramp: a quiet source link under the tagline', () => {
+    const link = doc.querySelector<HTMLAnchorElement>('#app-header .source-link');
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute('href')).toBe('https://github.com/Arrangedgodly/biome-generator');
+    expect(link!.getAttribute('target')).toBe('_blank');
+    expect(link!.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link!.textContent).toBe('View the source on GitHub');
   });
 
   it('has the app header, viewport meta, title, and the module script that loads main.ts (and with it style.css)', () => {
@@ -213,6 +229,17 @@ describe('stylesheet (src/style.css)', () => {
     expect(stylesheet).toContain('min-width: 0');
     expect(stylesheet).toContain('aspect-ratio: 1 / 1');
     expect(stylesheet).toContain('prefers-reduced-motion');
+  });
+
+  it('polish guards: pressed preset chips sink in (cut-out), the reveal invites the skip', () => {
+    // The latched chip is the Cut-Out treatment — inset fill + ocean edge —
+    // not the border-only shift the hover already spends.
+    expect(stylesheet).toContain("button[data-preset][aria-pressed='true']");
+    expect(stylesheet).toContain('touch-action: none');
+    // While the reveal plays, the canvas cursor switches from probe to
+    // invitation (the click skips the animation).
+    expect(stylesheet).toContain('#map-canvas.revealing');
+    expect(stylesheet).toContain('summary:focus-visible');
   });
 
   it('theme tokens meet WCAG contrast: focus ring ≥ 3:1 on bg and panel; text ≥ 4.5:1; error text ≥ 4.5:1', () => {

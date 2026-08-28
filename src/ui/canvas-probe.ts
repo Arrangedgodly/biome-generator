@@ -70,6 +70,15 @@ export interface CanvasProbeHandle {
 /** Field-pixel step for Shift+Arrow probing (one chunky pixel-art cell ×8). */
 const KEYBOARD_STEP_FAST = 8;
 
+/**
+ * The readout's empty state (onboard pass): until the first probe, the
+ * reserved line teaches the instrument instead of sitting blank — the
+ * critique's P1-3 found the probe invisible until stumbled upon. Any reading
+ * replaces it, and parking keeps a reading on the line, so it never returns
+ * after first use within a session.
+ */
+export const PROBE_PLACEHOLDER = 'Hover the map to survey a pixel — arrow keys work too';
+
 function clampField(v: number, res: number): number {
   if (res <= 0) return 0;
   return Math.min(Math.max(v, 0), res - 1);
@@ -103,6 +112,10 @@ export function attachCanvasProbe(canvas: HTMLCanvasElement, deps: CanvasProbeDe
   const dot = requireSelector<HTMLElement>('#probe-overlay .probe-dot');
 
   const getRect = deps.rect ?? (() => canvas.getBoundingClientRect());
+
+  // The empty state IS the first lesson: the line starts as the placeholder
+  // and returns to it whenever the instrument has nothing truer to say.
+  readout.textContent = PROBE_PLACEHOLDER;
 
   const disposers: Array<() => void> = [];
   function listen(target: HTMLElement, type: string, fn: (event: Event) => void): void {
@@ -156,7 +169,7 @@ export function attachCanvasProbe(canvas: HTMLCanvasElement, deps: CanvasProbeDe
     if (s === undefined) {
       // No fields yet (boot race, dead stack) — the instrument stays dark.
       lastProbe = null;
-      readout.textContent = '';
+      readout.textContent = PROBE_PLACEHOLDER;
       if (viaKeyboard) announce.textContent = '';
       setOverlay(false);
       return;
@@ -262,7 +275,7 @@ export function attachCanvasProbe(canvas: HTMLCanvasElement, deps: CanvasProbeDe
       for (const dispose of disposers) dispose();
       disposers.length = 0;
       lastProbe = null;
-      readout.textContent = '';
+      readout.textContent = PROBE_PLACEHOLDER;
       announce.textContent = '';
       setOverlay(false);
     },

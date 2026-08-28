@@ -21,8 +21,9 @@ import type { ControlPanelHandle, PanelControllerEvent } from './ui/control-pane
 import type { ControlState } from './controller/map-controller.ts';
 import type { PresetDefinition } from './presets/index.ts';
 import { findPreset } from './presets/index.ts';
-import { DEFAULT_FIELD_PARAMS, NO_BIASES } from './generation/index.ts';
+import { DEFAULT_FIELD_PARAMS, NO_BIASES, BIOME_IDS } from './generation/index.ts';
 import type { ClassifyBiases, FieldParams } from './generation/index.ts';
+import { PROBE_PLACEHOLDER } from './ui/canvas-probe.ts';
 import { parseHashBody } from './state/urlState.ts';
 import type { LocationPort } from './state/urlState.ts';
 
@@ -162,6 +163,11 @@ class FakeAnimation implements AppAnimationPort {
       this.listeners.delete(cb);
     };
   }
+
+  /** Test hook: fire a stage announcement through the wired listeners. */
+  emitStage(s: AnimationStage): void {
+    for (const listener of [...this.listeners]) listener(s);
+  }
 }
 
 /** Renderer double: satisfies the animation + probe ports, counts calls. */
@@ -257,11 +263,16 @@ function boot(
   readout.id = 'probe-readout';
   const statusHost = document.createElement('div');
   statusHost.id = 'stage-status'; // mirrors index.html (stage label lives here)
+  const legend = document.createElement('details'); // mirrors index.html (map key)
+  legend.id = 'biome-legend';
+  const swatchesHost = document.createElement('div');
+  swatchesHost.id = 'legend-swatches';
+  legend.append(swatchesHost);
   const announce = document.createElement('p');
   announce.id = 'probe-announce';
   announce.setAttribute('aria-live', 'polite'); // mirrors index.html
   announce.className = 'visually-hidden';
-  stage.append(canvas, overlay, statusHost, readout, announce);
+  stage.append(canvas, overlay, statusHost, readout, legend, announce);
   document.body.append(stage);
   const container = document.createElement('div');
   document.body.append(container);
@@ -319,6 +330,29 @@ describe('surveyor\'s probe wiring (delight)', () => {
     expect(hosted?.getAttribute('aria-live')).toBe('polite');
   });
 
+  it('onboard: boot populates the legend from the committed palette; the readout line teaches', () => {
+    boot('');
+    // The key is data-driven — one entry per committed biome, in palette order.
+    const entries = document.querySelectorAll('#legend-swatches .legend-entry');
+    expect(entries).toHaveLength(BIOME_IDS.length);
+    // The readout starts as the placeholder empty state (pre-first-probe).
+    const readout = document.querySelector<HTMLElement>('#probe-readout');
+    expect(readout?.textContent).toBe(PROBE_PLACEHOLDER);
+  });
+
+  it('polish: while the reveal plays the canvas carries the skip affordance; done returns it to the probe', () => {
+    const h = boot('');
+    h.animations[0]!.emitStage('elevation');
+    expect(h.canvas.classList.contains('revealing')).toBe(true);
+    expect(h.canvas.getAttribute('aria-busy')).toBe('true');
+    expect(h.canvas.title).toBe('Click to skip the reveal');
+
+    h.animations[0]!.emitStage('done');
+    expect(h.canvas.classList.contains('revealing')).toBe(false);
+    expect(h.canvas.getAttribute('aria-busy')).toBe('false');
+    expect(h.canvas.title).toBe('');
+  });
+
   it('focus + arrow keys probe the live renderer: reading + announcement; blur clears', () => {
     const h = boot('');
     const readout = document.querySelector<HTMLElement>('#probe-readout');
@@ -328,9 +362,9 @@ describe('surveyor\'s probe wiring (delight)', () => {
     expect(announce?.getAttribute('aria-live')).toBe('polite');
     expect(overlay?.hasAttribute('hidden')).toBe(true);
 
-    // No fields yet (boot race): the instrument stays dark.
+    // No fields yet (boot race): the instrument stays dark, the line teaches.
     h.canvas.dispatchEvent(new Event('focus'));
-    expect(readout!.textContent).toBe('');
+    expect(readout!.textContent).toBe(PROBE_PLACEHOLDER);
     expect(overlay?.hasAttribute('hidden')).toBe(true);
 
     // Fields land: focus probes the center of a 4×4 field, announcing the

@@ -57,6 +57,7 @@ import type { AnimationEnv, AnimationRendererPort, AnimationStage } from './rend
 import { buildControlPanel } from './ui/control-panel.ts';
 import type { ControlPanelHandle, ControlPanelPorts, PanelControllerEvent } from './ui/control-panel.ts';
 import { attachCanvasProbe } from './ui/canvas-probe.ts';
+import { populateBiomeLegend } from './ui/biome-legend.ts';
 import type { PresetDefinition } from './presets/index.ts';
 import { findPreset } from './presets/index.ts';
 import type { ClassifyBiases } from './generation/index.ts';
@@ -430,6 +431,21 @@ export function startApp(
   let stack = buildStack();
 
   /**
+   * Polish: while the staged reveal plays, the canvas itself carries the skip
+   * affordance — pointer cursor + a native tooltip invite the click, and
+   * aria-busy tells assistive tech a new map is arriving. Any stage
+   * announcement means the reveal owns the surface; 'done' hands it back to
+   * the probe. Registered on the stable listener set, so it survives rebuilds.
+   */
+  stageListeners.add((stage) => {
+    const revealing = stage !== 'done';
+    canvas.classList.toggle('revealing', revealing);
+    canvas.setAttribute('aria-busy', revealing ? 'true' : 'false');
+    if (revealing) canvas.title = 'Click to skip the reveal';
+    else canvas.removeAttribute('title');
+  });
+
+  /**
    * Play the staged reveal for a Generate-class arrival. `play()` resolves
    * 'done' in every path (including reduced motion and skip), so the catch is
    * purely a no-unhandled-rejection guard.
@@ -582,6 +598,15 @@ export function startApp(
   const stageStatusHost = document.querySelector<HTMLElement>('#stage-status');
   const panel = buildControlPanel(controls, ports, { stageHost: stageStatusHost ?? undefined });
   panel.bindCanvasSkip(canvas);
+
+  // The map's key (onboard): swatches from the same BIOMES data the renderer
+  // classifies with, so the legend can never drift from the pixels it
+  // explains. The skeleton is part of the layout contract (index.html).
+  const legendSwatches = document.querySelector<HTMLElement>('#legend-swatches');
+  if (legendSwatches === null) {
+    throw new Error('startApp: #legend-swatches not found (see index.html)');
+  }
+  populateBiomeLegend(legendSwatches);
 
   // ---- boot (T11): restore-from-hash or default-preset auto-generate -------
   // T3c-fix: the bare branch boots the preset's OWN slider positions (see

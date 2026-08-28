@@ -312,8 +312,7 @@ describe('T10 control panel', () => {
     expect(animation.skipCount).toBe(2);
   });
 
-  it('stage announcements update the aria-live label; done settles to "Map ready · seed N"', () => {
-    const { panel, animation, controller } = build();
+  it('stage announcements update the aria-live label; done settles to "Map ready · seed N"', () => {    const { panel, animation, controller } = build();
     const label = panel.elements.stageLabel;
     expect(label.getAttribute('aria-live')).toBe('polite');
     expect(label.textContent).toBe('');
@@ -329,6 +328,35 @@ describe('T10 control panel', () => {
     expect(label.textContent).toBe('Stage: Biomes');
     animation.emitStage('done');
     expect(label.textContent).toBe('Map ready · seed 128'); // full text, no CSS prefix
+  });
+
+  it('polish: generate-class clicks show the busy cue; the first stage replaces it; error clears it', () => {
+    const { panel, animation, controller } = build();
+    const label = panel.elements.stageLabel;
+
+    panel.elements.generateButton.click();
+    expect(label.textContent).toBe('Surveying…');
+
+    animation.emitStage('elevation');
+    expect(label.textContent).toBe('Stage: Elevation');
+
+    // Dice and preset arrivals cue too — every beat before a first frame.
+    panel.elements.diceButton.click();
+    expect(label.textContent).toBe('Surveying…');
+    panel.elements.presetButtons[0]!.click();
+    expect(label.textContent).toBe('Surveying…');
+
+    // An error supersedes the cue — the alert region owns the story.
+    controller.emit({ type: 'error', error: new Error('boom') });
+    expect(label.textContent).toBe('');
+  });
+
+  it('polish: slider readouts are id-paired to their inputs via aria-describedby', () => {
+    const { panel } = build();
+    expect(panel.elements.elevationInput.getAttribute('aria-describedby')).toBe('elevation-readout');
+    expect(panel.elements.moistureInput.getAttribute('aria-describedby')).toBe('moisture-readout');
+    expect(document.getElementById('elevation-readout')?.textContent).toBe('0.50');
+    expect(document.getElementById('moisture-readout')?.textContent).toBe('0.50');
   });
 
   it('stageHost option re-homes the stage label — map status lives with the map (layout pass)', () => {

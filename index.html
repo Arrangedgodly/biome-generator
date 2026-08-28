@@ -9,6 +9,16 @@
     <header id="app-header">
       <h1>Procedural Biome Generator</h1>
       <p class="tagline">Simplex noise, staged into biomes — elevation, moisture, color.</p>
+      <!-- The portfolio visitor's quiet exit ramp: the evidence is the source. -->
+      <p class="source-link-wrap">
+        <a
+          class="source-link"
+          href="https://github.com/Arrangedgodly/biome-generator"
+          target="_blank"
+          rel="noopener noreferrer"
+          >View the source on GitHub</a
+        >
+      </p>
     </header>
     <main id="app">
       <!-- The specimen stage: canvas + surveyor's probe (crosshair overlay,
@@ -32,6 +42,12 @@
              reading — the specimen's instruments report under the specimen. -->
         <div id="stage-status"></div>
         <p id="probe-readout"></p>
+        <!-- The map's key (onboard): one quiet line until opened; swatches are
+             populated from the SAME BIOMES data the renderer classifies with. -->
+        <details id="biome-legend" class="legend">
+          <summary>Biome legend</summary>
+          <div id="legend-swatches" class="legend-swatches"></div>
+        </details>
         <p id="probe-announce" class="visually-hidden" aria-live="polite"></p>
       </div>
       <aside id="controls" aria-label="Map controls"></aside>
