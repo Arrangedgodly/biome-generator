@@ -1,0 +1,489 @@
+/**
+ * T16 performance harness — TEMPORARY measurement code (deleted after evidence
+ * collection; not imported by the app, not collected by vitest, not part of the
+ * production bundle — vite build keeps the single index.html entry).
+ *
+ * Runs the REAL production modules (worker client + real Worker, MapRenderer,
+ * StagedAnimation, MapController, startApp) inside a real browser and returns
+ * per-scenario measurements to a Playwright driver via `window.__t16run`.
+ *
+ * Scenarios:
+ * - 'worker':   main-thread round-trip timings for the real worker protocol
+ *               (generate@512/256, recompute-elevation@512/256; first sample
+ *               includes worker spawn — reported separately in `first`).
+ * - 'compose':  main-thread pixel-path costs at 512² — LUT build, setFields
+ *               surface allocation, first-compose per mode, crossfade blit,
+ *               moisture-slider reclassify (rebuildBiomes + draw), per-chunk
+ *               composeChunk timings (D2 <8ms/chunk budget).
+ * - 'animation': one full staged reveal on the real renderer with every rAF
+ *               callback timed; per-frame JS inside the two crossfade windows
+ *               (D2 <10ms/frame budget) + frame-gap cadence + longtasks.
+ * - 'drag':     real MapController drag simulation — 25 elevation inputs at
+ *               ~60ms (30ms debounce → 256² preview path) + commit, then 25
+ *               moisture inputs (instant reclassify path; worker must NEVER be
+ *               called). Preview latencies + synchronous handler costs +
+ *               longtasks.
+ * - 'memory':   generate churn (30 regens, heap after GC) + real startApp
+ *               rebuild cycles (the D5 retry path; counts worker
+ *               constructions; heap after GC). Chromium-only heap numbers
+ *               (performance.memory); other engines return null samples but
+ *               still run the cycles for stability evidence.
+ */
+import { createMapController } from './controller/create.ts';
+import type { ControllerEvent } from './controller/map-controller.ts';
+import { MapRenderer } from './render/renderer.ts';
+import { StagedAnimation } from './render/animation.ts';
+import { buildBiomeLut, composeChunk } from './render/compose.ts';
+import type { RenderMode } from './render/compose.ts';
+import { generateFields, DEFAULT_FIELD_PARAMS } from './generation/index.ts';
+import { MapWorkerClient } from './worker/client.ts';
+import { startApp } from './app.ts';
+
+// ---- shared instrumentation --------------------------------------------------
+
+interface FrameSample {
+  /** performance.now() at callback start. */
+  at: number;
+  /** Callback execution time (ms). */
+  dur: number;
+}
+
+const frameSamples: FrameSample[] = [];
+
+(function instrumentRaf(): void {
+  const orig = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = (cb: FrameRequestCallback): number =>
+    orig((ts: number) => {
+      const t0 = performance.now();
+      try {
+        cb(ts);
+      } finally {
+        frameSamples.push({ at: t0, dur: performance.now() - t0 });
+      }
+    });
+})();
+
+interface LongTaskRecord {
+  name: string;
+  startTime: number;
+  duration: number;
+}
+
+const longTasks: LongTaskRecord[] = [];
+let longTaskSupported = true;
+try {
+  const obs = new PerformanceObserver((list) => {
+    for (const e of list.getEntries()) {
+      longTasks.push({ name: e.name, startTime: e.startTime, duration: e.duration });
+    }
+  });
+  obs.observe({ entryTypes: ['longtask'] });
+} catch {
+  longTaskSupported = false;
+}
+
+let workerConstructions = 0;
+let workerPosts = 0;
+
+/** Real worker factory (the production `new URL` pattern) with post counting. */
+function countingWorkerFactory(): Worker {
+  workerConstructions++;
+  const worker = new Worker(new URL('./worker/map.worker.ts', import.meta.url), { type: 'module' });
+  const origPost = worker.postMessage.bind(worker);
+  const counting = (message: unknown, ...rest: unknown[]) => {
+    workerPosts++;
+    (origPost as (m: unknown, ...r: unknown[]) => void)(message, ...rest);
+  };
+  worker.postMessage = counting as Worker['postMessage'];
+  return worker;
+}
+
+// ---- helpers -----------------------------------------------------------------
+
+interface Stats {
+  n: number;
+  first: number;
+  min: number;
+  median: number;
+  p95: number;
+  max: number;
+}
+
+function stats(xs: number[]): Stats {
+  if (xs.length === 0) return { n: 0, first: NaN, min: NaN, median: NaN, p95: NaN, max: NaN };
+  const s = [...xs].sort((a, b) => a - b);
+  const at = (q: number): number => s[Math.min(s.length - 1, Math.floor(q * (s.length - 1)))];
+  return {
+    n: xs.length,
+    first: +xs[0].toFixed(2),
+    min: +s[0].toFixed(2),
+    median: +at(0.5).toFixed(2),
+    p95: +at(0.95).toFixed(2),
+    max: +s[s.length - 1].toFixed(2),
+  };
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+async function waitFor(cond: () => boolean, timeoutMs = 30000, poll = 30): Promise<boolean> {
+  const deadline = performance.now() + timeoutMs;
+  while (!cond() && performance.now() < deadline) await sleep(poll);
+  return cond();
+}
+
+function makeCanvas(size = 512): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  document.body.append(c);
+  return c;
+}
+
+interface MemoryInfo {
+  usedJSHeapSize: number;
+  totalJSHeapSize: number;
+}
+
+function heapUsedMiB(): number | null {
+  const mem = (performance as unknown as { memory?: MemoryInfo }).memory;
+  return mem === undefined ? null : +(mem.usedJSHeapSize / 1048576).toFixed(1);
+}
+
+async function settleAndGc(): Promise<number | null> {
+  await sleep(250);
+  const gc = (window as unknown as { gc?: () => void }).gc;
+  if (typeof gc === 'function') gc();
+  await sleep(250);
+  gc?.();
+  await sleep(150);
+  return heapUsedMiB();
+}
+
+// ---- scenario: worker round-trip timings --------------------------------------
+
+async function scenarioWorker(): Promise<unknown> {
+  const client = new MapWorkerClient(() => countingWorkerFactory());
+  const params = { ...DEFAULT_FIELD_PARAMS };
+  const t = { gen512: [] as number[], gen256: [] as number[], re256: [] as number[], re512: [] as number[] };
+
+  async function run(bucket: number[], fn: () => Promise<unknown>): Promise<void> {
+    const t0 = performance.now();
+    await fn();
+    bucket.push(performance.now() - t0);
+  }
+
+  // Sequential awaited requests (the app's pattern); first gen512 includes spawn.
+  for (let i = 0; i < 8; i++) await run(t.gen512, () => client.generate(1000 + i, params, 512));
+  for (let i = 0; i < 6; i++) await run(t.gen256, () => client.generate(2000 + i, params, 256));
+  for (let i = 0; i < 10; i++) await run(t.re256, () => client.recomputeElevation(3000 + i, params, 256));
+  for (let i = 0; i < 6; i++) await run(t.re512, () => client.recomputeElevation(4000 + i, params, 512));
+  client.terminate();
+  return {
+    gen512: stats(t.gen512),
+    gen256: stats(t.gen256),
+    re256: stats(t.re256),
+    re512: stats(t.re512),
+  };
+}
+
+// ---- scenario: main-thread pixel-path costs ----------------------------------
+
+async function scenarioCompose(): Promise<unknown> {
+  const canvas = makeCanvas();
+  const renderer = new MapRenderer(canvas);
+  const fields = generateFields(42, DEFAULT_FIELD_PARAMS, 512);
+
+  const repeat = (n: number, fn: () => void): Stats => {
+    const xs: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const t0 = performance.now();
+      fn();
+      xs.push(performance.now() - t0);
+    }
+    return stats(xs);
+  };
+
+  const lutDefault = repeat(20, () => buildBiomeLut());
+  const lutBiased = repeat(20, () => buildBiomeLut({ seaLevelBias: 0, moistureBias: 0.2 }));
+  const setFieldsCost = repeat(10, () => renderer.setFields(fields));
+
+  // First draw per mode = full-frame compose (8 chunks) + putImageData + blit.
+  const modes: RenderMode[] = ['elevation', 'moisture', 'biomes'];
+  const firstCompose: Record<string, Stats> = {};
+  for (const mode of modes) {
+    firstCompose[mode] = repeat(10, () => {
+      renderer.setFields(fields);
+      renderer.draw(mode);
+    });
+  }
+
+  // Pure crossfade blit cost (both surfaces already composed).
+  renderer.setFields(fields);
+  renderer.draw('elevation');
+  renderer.draw('moisture');
+  const crossfadeBlit = repeat(30, () => renderer.crossfade('elevation', 'moisture', 0.5));
+
+  // The moisture-slider path: new biases → LUT rebuild + biome recompose + blit.
+  renderer.draw('biomes');
+  let mi = 0;
+  const reclassify = repeat(30, () => {
+    mi++;
+    renderer.rebuildBiomes({ seaLevelBias: 0, moistureBias: -0.4 + (0.8 * (mi % 9)) / 8 });
+    renderer.draw('biomes');
+  });
+
+  // Per-chunk composeChunk (D2 <8ms/chunk): 8 chunks × 5 reps per mode.
+  const chunk: Record<string, Stats> = {};
+  const out = new Uint32Array(512 * 512);
+  for (const mode of modes) {
+    const xs: number[] = [];
+    for (let rep = 0; rep < 5; rep++) {
+      for (let from = 0; from < 512; from += 64) {
+        const t0 = performance.now();
+        composeChunk(mode, fields, out, from, from + 64);
+        xs.push(performance.now() - t0);
+      }
+    }
+    chunk[mode] = stats(xs);
+  }
+
+  canvas.remove();
+  return { lutDefault, lutBiased, setFieldsCost, firstCompose, crossfadeBlit, reclassify, chunk };
+}
+
+// ---- scenario: staged animation frame analysis -------------------------------
+
+async function scenarioAnimation(): Promise<unknown> {
+  const canvas = makeCanvas();
+  const renderer = new MapRenderer(canvas);
+  const fields = generateFields(7, DEFAULT_FIELD_PARAMS, 512);
+
+  // Mirror controller.finalizeFields (the app path into the animation).
+  renderer.setFields(fields);
+  renderer.rebuildBiomes({ seaLevelBias: 0, moistureBias: 0 });
+  renderer.draw('biomes');
+
+  const anim = new StagedAnimation(renderer);
+  frameSamples.length = 0;
+  longTasks.length = 0;
+
+  const playSyncStart = performance.now();
+  const done = anim.play();
+  const playSyncMs = performance.now() - playSyncStart; // elevation compose + first draw
+  const animStart = playSyncStart;
+  const stage = await done;
+  const totalMs = performance.now() - animStart;
+
+  const frames = frameSamples.slice();
+  const durs = frames.map((f) => f.dur);
+  const inWindow = (f: FrameSample, a: number, b: number): boolean =>
+    f.at - animStart >= a && f.at - animStart <= b;
+  const fade1 = frames.filter((f) => inWindow(f, 950, 1450)).map((f) => f.dur);
+  const fade2 = frames.filter((f) => inWindow(f, 2350, 2850)).map((f) => f.dur);
+  const worst = [...frames]
+    .sort((a, b) => b.dur - a.dur)
+    .slice(0, 8)
+    .map((f) => ({ atMs: +(f.at - animStart).toFixed(1), durMs: +f.dur.toFixed(2) }));
+  const gaps: number[] = [];
+  for (let i = 1; i < frames.length; i++) gaps.push(frames[i].at - frames[i - 1].at);
+
+  const tasksDuring = longTasks.slice();
+  canvas.remove();
+  return {
+    stage,
+    playSyncMs: +playSyncMs.toFixed(2),
+    totalMs: +totalMs.toFixed(0),
+    frames: frames.length,
+    frameJsAll: stats(durs),
+    fade1FrameJs: stats(fade1),
+    fade2FrameJs: stats(fade2),
+    frameGap: stats(gaps),
+    gapsOver33ms: gaps.filter((g) => g > 33.4).length,
+    gapsOver50ms: gaps.filter((g) => g > 50).length,
+    worstFrames: worst,
+    longTasksDuring: tasksDuring,
+  };
+}
+
+// ---- scenario: controller drag simulation ------------------------------------
+
+async function scenarioDrag(): Promise<unknown> {
+  const canvas = makeCanvas();
+  const { controller } = createMapController(canvas, countingWorkerFactory);
+
+  let finals = 0;
+  let previews = 0;
+  let errors = 0;
+  let lastInputAt = 0;
+  let lastFinalMarker = 0;
+  const finalTimes: number[] = [];
+  const previewLatencies: number[] = [];
+  const inputHandlerMs: number[] = [];
+  const moistureHandlerMs: number[] = [];
+
+  controller.subscribe((e: ControllerEvent) => {
+    if (e.type === 'fields' && e.final) {
+      finals++;
+      if (lastFinalMarker > 0) finalTimes.push(performance.now() - lastFinalMarker);
+    }
+    if (e.type === 'preview') {
+      previews++;
+      if (lastInputAt > 0) previewLatencies.push(performance.now() - lastInputAt);
+    }
+    if (e.type === 'error') errors++;
+  });
+
+  longTasks.length = 0;
+  controller.regenerate(0);
+  const booted = await waitFor(() => finals >= 1, 30000, 20);
+  if (!booted) return { error: 'boot generate did not complete' };
+
+  // Elevation drag: 25 inputs ~60ms apart (real debounce 30ms → 256² previews).
+  const postsBefore = workerPosts;
+  for (let i = 0; i < 25; i++) {
+    const v = 0.2 + (0.6 * i) / 24;
+    lastInputAt = performance.now();
+    const t0 = performance.now();
+    controller.setElevation(v);
+    inputHandlerMs.push(performance.now() - t0);
+    await sleep(60);
+  }
+  lastFinalMarker = performance.now();
+  controller.commitElevation();
+  const committed = await waitFor(() => finals >= 2, 30000, 20);
+  const commitLatency = finalTimes.length > 0 ? finalTimes[finalTimes.length - 1] : NaN;
+  const postsDuringElevation = workerPosts - postsBefore;
+
+  // Moisture drag: 25 inputs ~40ms apart; worker must NEVER be called.
+  const postsBeforeMoisture = workerPosts;
+  for (let i = 0; i < 25; i++) {
+    const v = 0.1 + (0.8 * i) / 24;
+    const t0 = performance.now();
+    controller.setMoisture(v);
+    moistureHandlerMs.push(performance.now() - t0);
+    await sleep(40);
+  }
+  const postsDuringMoisture = workerPosts - postsBeforeMoisture;
+  await sleep(200);
+
+  const tasksDuring = longTasks.slice();
+  canvas.remove();
+  return {
+    committed,
+    commitLatencyMs: +commitLatency.toFixed(1),
+    elevationInputs: 25,
+    previewsDelivered: previews,
+    previewLatency: stats(previewLatencies),
+    postsDuringElevation,
+    elevationInputHandler: stats(inputHandlerMs),
+    postsDuringMoisture,
+    moistureInputHandler: stats(moistureHandlerMs),
+    workerErrors: errors,
+    longTasksDuring: tasksDuring,
+  };
+}
+
+// ---- scenario: memory churn + rebuild cycles ---------------------------------
+
+async function scenarioMemory(): Promise<unknown> {
+  const heapSupported = heapUsedMiB() !== null;
+
+  // A) generate churn through the full controller+renderer stack.
+  const canvas = makeCanvas();
+  const { controller } = createMapController(canvas, countingWorkerFactory);
+  let finals = 0;
+  let errors = 0;
+  controller.subscribe((e: ControllerEvent) => {
+    if (e.type === 'fields' && e.final) finals++;
+    if (e.type === 'error') errors++;
+  });
+  controller.regenerate(0);
+  await waitFor(() => finals >= 1, 30000, 20);
+  const baseline = await settleAndGc();
+  for (let i = 1; i <= 30; i++) {
+    controller.regenerate(i);
+    const ok = await waitFor(() => finals >= i + 1, 30000, 20);
+    if (!ok) return { error: `churn regen ${i} did not complete` };
+  }
+  const afterChurn = await settleAndGc();
+  controller.dispose();
+  canvas.remove();
+
+  // B) real startApp rebuild cycles (the D5 retry path: dispose stack, new
+  // worker + renderer + controller + animation, applySharedState regen@512).
+  const appCanvas = makeCanvas();
+  const controls = document.createElement('aside');
+  controls.id = 'controls';
+  document.body.append(controls);
+  const constructionsBeforeApp = workerConstructions;
+  const app = startApp(appCanvas, controls, {
+    createBundle: () => createMapController(appCanvas, countingWorkerFactory),
+  });
+  const rebuildSamples: (number | null)[] = [];
+  await waitFor(
+    () => (document.querySelector('#stage-label')?.textContent ?? '') === 'Biomes',
+    45000,
+    50,
+  );
+  rebuildSamples.push(await settleAndGc());
+  for (let i = 0; i < 8; i++) {
+    app.rebuild();
+    await sleep(700);
+    if (i % 2 === 1) rebuildSamples.push(await settleAndGc());
+  }
+  await waitFor(
+    () => (document.querySelector('#stage-label')?.textContent ?? '') === 'Biomes',
+    45000,
+    50,
+  );
+  rebuildSamples.push(await settleAndGc());
+  const appConstructions = workerConstructions - constructionsBeforeApp;
+  app.dispose();
+  appCanvas.remove();
+  controls.remove();
+
+  return {
+    heapSupported,
+    baselineMiB: baseline,
+    afterChurn30RegensMiB: afterChurn,
+    churnDeltaMiB: baseline !== null && afterChurn !== null ? +(afterChurn - baseline).toFixed(1) : null,
+    churnErrors: errors,
+    rebuildCycles: 8,
+    appWorkerConstructions: appConstructions,
+    rebuildHeapSamplesMiB: rebuildSamples,
+  };
+}
+
+// ---- runner -------------------------------------------------------------------
+
+type ScenarioName = 'worker' | 'compose' | 'animation' | 'drag' | 'memory';
+const scenarios: Record<ScenarioName, () => Promise<unknown>> = {
+  worker: scenarioWorker,
+  compose: scenarioCompose,
+  animation: scenarioAnimation,
+  drag: scenarioDrag,
+  memory: scenarioMemory,
+};
+
+const exposure = window as unknown as {
+  __t16ready: boolean;
+  __t16run: (name: string) => Promise<unknown>;
+};
+exposure.__t16ready = true;
+exposure.__t16run = async (name: string): Promise<unknown> => {
+  const fn = scenarios[name as ScenarioName];
+  if (fn === undefined) return { error: `unknown scenario: ${name}` };
+  const t0 = performance.now();
+  const data = await fn();
+  return {
+    scenario: name,
+    wallMs: +(performance.now() - t0).toFixed(0),
+    longTaskSupported,
+    workerConstructions,
+    workerPosts,
+    data,
+  };
+};
+
+const status = document.querySelector('#t16-status');
+if (status !== null) status.textContent = 'ready';

@@ -1,0 +1,308 @@
+/* ==========================================================================
+   T9 — palette application & visual polish (plan T9; research D3 + D2).
+
+   Dark theme derived from the committed biome palette: ocean #20658c drives
+   the accent; the canvas keeps its nearest-neighbor upscale look (D2). The
+   stylesheet styles app chrome only — the staged canvas animation (T8) owns
+   all motion on the map itself.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* Palette-derived theme tokens. */
+  --bg: #111827;
+  --panel: #1f2937;
+  --panel-edge: #374151;
+  --panel-inset: #111827;
+  --text: #e5e7eb;
+  --text-muted: #9ca3af;
+  /* Ocean accent: primary fills (white text on it ≈ 6.4:1). */
+  --accent: #20658c;
+  /* Lighter ocean for focus rings: ≈ 4.7:1 on --bg, ≈ 3.9:1 on --panel
+     (WCAG 2.2 non-text contrast ≥ 3:1 — verified in layout.test.ts). */
+  --accent-bright: #3d8ab8;
+  /* Error surface: light red text on deep red (≈ 5.3:1), never pure red. */
+  --danger-text: #fca5a5;
+  --danger-bg: #7f1d1d;
+  --danger-edge: #b91c1c;
+
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.4;
+}
+
+/* ---- header ---------------------------------------------------------- */
+
+#app-header {
+  padding: 0.75rem 1rem 0.5rem;
+  text-align: center;
+}
+
+#app-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+#app-header .tagline {
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* ---- main row: canvas (flexible) + controls (fixed column) ------------- */
+
+#app {
+  flex: 1;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem 1.25rem;
+  display: flex;
+  flex-wrap: wrap; /* below ~640px the controls wrap under the canvas */
+  gap: 1.5rem;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+#map-canvas {
+  display: block;
+  flex: 0 1 auto;
+  width: min(90vmin, 640px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  max-width: 100%; /* never forces horizontal scroll */
+  border-radius: var(--radius);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  image-rendering: crisp-edges; /* Firefox honors this — keep it first */
+  image-rendering: pixelated; /* Chrome/Safari win with the last declaration */
+  cursor: pointer; /* canvas click skips the staged animation (T10) */
+}
+
+/* ---- controls aside ---------------------------------------------------- */
+
+#controls {
+  flex: 0 0 280px;
+  width: 280px;
+  min-width: 0;
+}
+
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius);
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.control-row > label {
+  flex: 0 0 4.75em;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* Range inputs: full-width, touch-height, native (keyboard-operable). */
+.control-row > input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  min-height: 2.5rem;
+  accent-color: var(--accent);
+}
+
+.readout {
+  flex: 0 0 2.5em;
+  text-align: right;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+#seed-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0 0.625rem;
+  color: var(--text);
+  background: var(--panel-inset);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  font-size: 0.9375rem;
+}
+
+/* ---- buttons ----------------------------------------------------------- */
+
+.control-row > button {
+  flex: 1 1 0; /* preset row = 3 equal buttons; export/share equal */
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-inset);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.control-row > button:hover:not(:disabled) {
+  border-color: var(--accent-bright);
+}
+
+/* Generate = primary filled action. */
+#generate-button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+#generate-button:hover:not(:disabled) {
+  background: var(--accent-bright);
+}
+
+/* 🎲 = square icon button. */
+#dice-button {
+  flex: 0 0 auto;
+  width: 2.5rem;
+  padding: 0;
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+/* Quiet buttons: presets and export/share (currently disabled placeholders). */
+.control-row > button[data-preset],
+.control-row > button[data-action='export'],
+.control-row > button[data-action='share'] {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+button:disabled,
+input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---- stage status line (min-height reserves space; no layout jump) ------ */
+
+.stage-label {
+  margin: 0;
+  min-height: 1.5em;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.stage-label:not(:empty)::before {
+  content: 'Stage: ';
+}
+
+/* ---- error region (alert-like, WCAG-passable red-on-red) ---------------- */
+
+.error-region {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-edge);
+  border-radius: 8px;
+  color: var(--danger-text);
+  font-size: 0.875rem;
+}
+
+/* display:flex above must not defeat the hidden attribute. */
+.error-region[hidden] {
+  display: none;
+}
+
+.error-region > button {
+  flex: 0 0 auto;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.75rem;
+  font: inherit;
+  color: var(--danger-text);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ---- focus visibility (all interactive elements, ≥ 3:1 non-text) -------- */
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+/* ---- responsive: stacked column below 640px, usable at 375px ----------- */
+
+@media (max-width: 640px) {
+  #app {
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 0.75rem 1rem;
+  }
+
+  #map-canvas {
+    width: 100%;
+    max-width: 512px;
+  }
+
+  #controls {
+    width: 100%;
+    max-width: 512px;
+    flex: 0 1 auto;
+  }
+
+  .control-row > label {
+    flex-basis: 4em;
+  }
+}
+
+/* ---- reduced motion: CSS-side guard alongside T8's JS path -------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none;
+    transition: none;
+  }
+}

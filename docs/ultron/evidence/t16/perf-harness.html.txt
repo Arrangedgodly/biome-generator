@@ -1,0 +1,13 @@
+<!doctype html>
+<!-- T16 PERFORMANCE HARNESS — TEMPORARY measurement page, deleted after evidence
+     collection. Not an app entry; excluded from vite build (single-entry). -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>T16 perf harness (temporary)</title>
+  </head>
+  <body>
+    <div id="t16-status">loading</div>
+    <script type="module" src="/src/perf-harness.ts"></script>
+  </body>
+</html>

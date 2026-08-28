@@ -1,0 +1,458 @@
+{
+  "env": {
+    "name": "chromium-desktop-4x",
+    "engine": "chromium",
+    "throttle": 4,
+    "device": null,
+    "resolvedDevice": "desktop-1280x800",
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36"
+  },
+  "startedAt": "2026-08-27T19:20:30.862Z",
+  "harness": {
+    "worker": {
+      "scenario": "worker",
+      "wallMs": 1703,
+      "longTaskSupported": true,
+      "workerConstructions": 1,
+      "workerPosts": 30,
+      "data": {
+        "gen512": {
+          "n": 8,
+          "first": 117.5,
+          "min": 99.3,
+          "median": 108.1,
+          "p95": 130.9,
+          "max": 137.6
+        },
+        "gen256": {
+          "n": 6,
+          "first": 26,
+          "min": 24.9,
+          "median": 26,
+          "p95": 28.6,
+          "max": 28.7
+        },
+        "re256": {
+          "n": 10,
+          "first": 19.7,
+          "min": 17.7,
+          "median": 18.2,
+          "p95": 19.3,
+          "max": 19.7
+        },
+        "re512": {
+          "n": 6,
+          "first": 72.4,
+          "min": 68.7,
+          "median": 71.3,
+          "p95": 72.6,
+          "max": 72.8
+        }
+      }
+    },
+    "compose": {
+      "scenario": "compose",
+      "wallMs": 776,
+      "longTaskSupported": true,
+      "workerConstructions": 1,
+      "workerPosts": 30,
+      "data": {
+        "lutDefault": {
+          "n": 20,
+          "first": 0.1,
+          "min": 0,
+          "median": 0.2,
+          "p95": 1.1,
+          "max": 1.2
+        },
+        "lutBiased": {
+          "n": 20,
+          "first": 1.6,
+          "min": 0,
+          "median": 0.1,
+          "p95": 1.4,
+          "max": 1.6
+        },
+        "setFieldsCost": {
+          "n": 10,
+          "first": 3.2,
+          "min": 0,
+          "median": 0.2,
+          "p95": 3.2,
+          "max": 4.9
+        },
+        "firstCompose": {
+          "elevation": {
+            "n": 10,
+            "first": 11.7,
+            "min": 3.1,
+            "median": 4,
+            "p95": 5.1,
+            "max": 11.7
+          },
+          "moisture": {
+            "n": 10,
+            "first": 8.1,
+            "min": 3.5,
+            "median": 4.6,
+            "p95": 8.1,
+            "max": 8.9
+          },
+          "biomes": {
+            "n": 10,
+            "first": 7.6,
+            "min": 4.6,
+            "median": 5.5,
+            "p95": 7.1,
+            "max": 7.6
+          }
+        },
+        "crossfadeBlit": {
+          "n": 30,
+          "first": 0.1,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0.1
+        },
+        "reclassify": {
+          "n": 30,
+          "first": 72.4,
+          "min": 3.2,
+          "median": 4.3,
+          "p95": 5.1,
+          "max": 72.4
+        },
+        "chunk": {
+          "elevation": {
+            "n": 40,
+            "first": 0.1,
+            "min": 0,
+            "median": 0.1,
+            "p95": 0.9,
+            "max": 1
+          },
+          "moisture": {
+            "n": 40,
+            "first": 0.8,
+            "min": 0,
+            "median": 0.2,
+            "p95": 1,
+            "max": 1
+          },
+          "biomes": {
+            "n": 40,
+            "first": 1.7,
+            "min": 0,
+            "median": 0.4,
+            "p95": 1,
+            "max": 1.7
+          }
+        }
+      }
+    },
+    "animation": {
+      "scenario": "animation",
+      "wallMs": 3116,
+      "longTaskSupported": true,
+      "workerConstructions": 1,
+      "workerPosts": 30,
+      "data": {
+        "stage": "done",
+        "playSyncMs": 4.3,
+        "totalMs": 2801,
+        "frames": 170,
+        "frameJsAll": {
+          "n": 170,
+          "first": 0,
+          "min": 0,
+          "median": 0,
+          "p95": 0.4,
+          "max": 4.6
+        },
+        "fade1FrameJs": {
+          "n": 30,
+          "first": 0,
+          "min": 0,
+          "median": 0,
+          "p95": 0.4,
+          "max": 4.6
+        },
+        "fade2FrameJs": {
+          "n": 28,
+          "first": 0,
+          "min": 0,
+          "median": 0.1,
+          "p95": 0.6,
+          "max": 1.7
+        },
+        "frameGap": {
+          "n": 169,
+          "first": 2.3,
+          "min": 2.3,
+          "median": 16.8,
+          "p95": 18.7,
+          "max": 19.9
+        },
+        "gapsOver33ms": 0,
+        "gapsOver50ms": 0,
+        "worstFrames": [
+          {
+            "atMs": 1000.2,
+            "durMs": 4.6
+          },
+          {
+            "atMs": 2632.8,
+            "durMs": 1.7
+          },
+          {
+            "atMs": 1966.4,
+            "durMs": 1.3
+          },
+          {
+            "atMs": 101.9,
+            "durMs": 0.7
+          },
+          {
+            "atMs": 2286.4,
+            "durMs": 0.7
+          },
+          {
+            "atMs": 2484.9,
+            "durMs": 0.6
+          },
+          {
+            "atMs": 2551.4,
+            "durMs": 0.6
+          },
+          {
+            "atMs": 2668.6,
+            "durMs": 0.5
+          }
+        ],
+        "longTasksDuring": []
+      }
+    },
+    "drag": {
+      "scenario": "drag",
+      "wallMs": 3042,
+      "longTaskSupported": true,
+      "workerConstructions": 2,
+      "workerPosts": 57,
+      "data": {
+        "committed": true,
+        "commitLatencyMs": 72,
+        "elevationInputs": 25,
+        "previewsDelivered": 25,
+        "previewLatency": {
+          "n": 25,
+          "first": 63.8,
+          "min": 48.5,
+          "median": 50.3,
+          "p95": 52.7,
+          "max": 63.8
+        },
+        "postsDuringElevation": 26,
+        "elevationInputHandler": {
+          "n": 25,
+          "first": 0.9,
+          "min": 0,
+          "median": 0,
+          "p95": 0.1,
+          "max": 0.9
+        },
+        "postsDuringMoisture": 0,
+        "moistureInputHandler": {
+          "n": 25,
+          "first": 4.5,
+          "min": 3.2,
+          "median": 3.9,
+          "p95": 4.4,
+          "max": 4.6
+        },
+        "workerErrors": 0,
+        "longTasksDuring": []
+      }
+    },
+    "memory": {
+      "scenario": "memory",
+      "wallMs": 18123,
+      "longTaskSupported": true,
+      "workerConstructions": 12,
+      "workerPosts": 97,
+      "data": {
+        "heapSupported": true,
+        "baselineMiB": 24.8,
+        "afterChurn30RegensMiB": 24.8,
+        "churnDeltaMiB": 0,
+        "churnErrors": 0,
+        "rebuildCycles": 8,
+        "appWorkerConstructions": 9,
+        "rebuildHeapSamplesMiB": [
+          24.8,
+          24.8,
+          24.8,
+          24.8,
+          24.8,
+          24.8
+        ]
+      }
+    },
+    "workersAliveAfterMemory": 11
+  },
+  "app": {
+    "phases": {
+      "boot": {
+        "wallMs": 3270,
+        "frames": {
+          "n": 320,
+          "jsMaxMs": 7.9,
+          "jsP95Ms": 0.2,
+          "jsMedianMs": 0,
+          "framesOver10msJs": 0,
+          "framesOver50msJs": 0,
+          "gapMaxMs": 37.5,
+          "gapP95Ms": 18.3,
+          "gapsOver33ms": 1,
+          "gapsOver50ms": 0
+        },
+        "worstFrames": [
+          {
+            "at": 1270.1,
+            "dur": 7.9
+          },
+          {
+            "at": 685.7,
+            "dur": 1
+          },
+          {
+            "at": 274.4,
+            "dur": 0.9
+          },
+          {
+            "at": 818,
+            "dur": 0.9
+          },
+          {
+            "at": 1151.8,
+            "dur": 0.8
+          }
+        ],
+        "longtasks": [],
+        "longestTaskMs": 0
+      },
+      "elevation-drag": {
+        "wallMs": 3124,
+        "frames": {
+          "n": 0
+        },
+        "worstFrames": [],
+        "longtasks": [],
+        "longestTaskMs": 0
+      },
+      "moisture-drag": {
+        "wallMs": 1846,
+        "frames": {
+          "n": 0
+        },
+        "worstFrames": [],
+        "longtasks": [],
+        "longestTaskMs": 0
+      },
+      "dice-regen-animation": {
+        "wallMs": 3262,
+        "frames": {
+          "n": 319,
+          "jsMaxMs": 4.2,
+          "jsP95Ms": 0.2,
+          "jsMedianMs": 0,
+          "framesOver10msJs": 0,
+          "framesOver50msJs": 0,
+          "gapMaxMs": 20.8,
+          "gapP95Ms": 18.1,
+          "gapsOver33ms": 0,
+          "gapsOver50ms": 0
+        },
+        "worstFrames": [
+          {
+            "at": 9503.2,
+            "dur": 4.2
+          },
+          {
+            "at": 8718.2,
+            "dur": 1.1
+          },
+          {
+            "at": 9885.2,
+            "dur": 1.1
+          },
+          {
+            "at": 8602.2,
+            "dur": 0.8
+          },
+          {
+            "at": 11302.5,
+            "dur": 0.8
+          }
+        ],
+        "longtasks": [],
+        "longestTaskMs": 0
+      },
+      "export": {
+        "wallMs": 48,
+        "frames": {
+          "n": 0
+        },
+        "worstFrames": [],
+        "longtasks": [],
+        "longestTaskMs": 0
+      },
+      "share": {
+        "wallMs": 3504,
+        "frames": {
+          "n": 2,
+          "jsMaxMs": 0,
+          "jsP95Ms": 0,
+          "jsMedianMs": 0,
+          "framesOver10msJs": 0,
+          "framesOver50msJs": 0,
+          "gapMaxMs": 18.3,
+          "gapP95Ms": 18.3,
+          "gapsOver33ms": 0,
+          "gapsOver50ms": 0
+        },
+        "worstFrames": [
+          {
+            "at": 11700.2,
+            "dur": 0
+          },
+          {
+            "at": 11718.5,
+            "dur": 0
+          }
+        ],
+        "longtasks": [],
+        "longestTaskMs": 0
+      }
+    },
+    "export": {
+      "downloaded": true,
+      "suggested": "biome-generator-220195.png",
+      "bytes": 49802,
+      "isPng": true,
+      "width": 512,
+      "height": 512
+    },
+    "share": {
+      "copiedIndicated": true,
+      "clipboardUrl": "http://localhost:4173/biome-generator/#v=1&seed=220195&el=0.8&mo=0.9",
+      "hashUrl": "http://localhost:4173/biome-generator/#v=1&seed=220195&el=0.8&mo=0.9",
+      "clipboardMatchesHash": true,
+      "freshLoadUrl": "http://localhost:4173/biome-generator/#v=1&seed=220195&el=0.8&mo=0.9",
+      "mapIdentical": true,
+      "dataUrlLength": 66426
+    },
+    "longTaskSupported": true,
+    "totalLongtasks": 1
+  }
+}

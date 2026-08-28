@@ -1,0 +1,364 @@
+/**
+ * T16 performance evidence driver (throwaway, /tmp/t16).
+ *
+ * Per environment (engine x throttle x device):
+ *   1. HARNESS scenarios on the dev-servered harness page (real modules):
+ *      worker, compose, animation, drag, memory.
+ *   2. REAL PRODUCTION APP (vite preview of dist/) driven via real DOM events:
+ *      boot animation, elevation drag, moisture drag, dice, export PNG
+ *      (download + PNG decode + dimensions), share (clipboard round-trip +
+ *      fresh-load map identity). Longtasks + rAF frames recorded per phase.
+ *
+ * Results -> /tmp/t16-results/<env>.json (+ export-<env>.png).
+ */
+import { chromium, webkit, devices } from 'playwright';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const OUT = '/tmp/t16-results';
+fs.mkdirSync(OUT, { recursive: true });
+
+const HARNESS_URL = 'http://localhost:5173/biome-generator/perf-harness.html';
+const APP_URL = 'http://localhost:4173/biome-generator/';
+
+function pickDevice(name) {
+  const candidates = { 'Pixel 7': ['Pixel 7', 'Pixel 5'], 'iPhone 13': ['iPhone 13', 'iPhone 12'] };
+  for (const c of candidates[name] ?? [name]) if (devices[c]) return { name: c, desc: devices[c] };
+  return { name, desc: null };
+}
+
+const ENVS = [
+  { name: 'chromium-desktop', engine: 'chromium', throttle: 1, device: null },
+  { name: 'chromium-desktop-4x', engine: 'chromium', throttle: 4, device: null },
+  { name: 'chromium-mobile-4x', engine: 'chromium', throttle: 4, device: 'Pixel 7' },
+  { name: 'webkit-desktop', engine: 'webkit', throttle: 1, device: null },
+  { name: 'webkit-ios', engine: 'webkit', throttle: 1, device: 'iPhone 13' },
+];
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function frameStats(frames) {
+  if (!frames.length) return { n: 0 };
+  const durs = frames.map((f) => f.dur).sort((a, b) => a - b);
+  const gaps = [];
+  for (let i = 1; i < frames.length; i++) gaps.push(frames[i].at - frames[i - 1].at);
+  gaps.sort((a, b) => a - b);
+  const at = (arr, q) => arr[Math.min(arr.length - 1, Math.floor(q * (arr.length - 1)))];
+  return {
+    n: frames.length,
+    jsMaxMs: +durs[durs.length - 1].toFixed(2),
+    jsP95Ms: +at(durs, 0.95).toFixed(2),
+    jsMedianMs: +at(durs, 0.5).toFixed(2),
+    framesOver10msJs: durs.filter((d) => d > 10).length,
+    framesOver50msJs: durs.filter((d) => d > 50).length,
+    gapMaxMs: gaps.length ? +gaps[gaps.length - 1].toFixed(1) : null,
+    gapP95Ms: gaps.length ? +at(gaps, 0.95).toFixed(1) : null,
+    gapsOver33ms: gaps.filter((g) => g > 33.4).length,
+    gapsOver50ms: gaps.filter((g) => g > 50).length,
+  };
+}
+
+async function applyThrottle(env, page) {
+  if (env.throttle === 1 || env.engine !== 'chromium') return false;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: env.throttle });
+  return true;
+}
+
+async function makeContext(browser, env) {
+  const device = env.device ? pickDevice(env.device) : null;
+  const opts = device?.desc
+    ? device.desc
+    : { viewport: { width: 1280, height: 800 } };
+  const context = await browser.newContext(opts);
+  env.resolvedDevice = device?.name ?? 'desktop-1280x800';
+  if (env.engine === 'chromium') {
+    try {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    } catch (e) {
+      console.log(`  [${env.name}] clipboard perms failed: ${e.message}`);
+    }
+  }
+  await context.addInitScript(() => {
+    window.__t16 = { longtasks: [], longTaskSupported: true, frames: [], marks: [] };
+    try {
+      new PerformanceObserver((l) => {
+        for (const e of l.getEntries())
+          window.__t16.longtasks.push({
+            name: e.name,
+            startTime: +e.startTime.toFixed(1),
+            duration: +e.duration.toFixed(1),
+          });
+      }).observe({ entryTypes: ['longtask'] });
+    } catch {
+      window.__t16.longTaskSupported = false;
+    }
+    const orig = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) =>
+      orig((ts) => {
+        const s = performance.now();
+        try {
+          cb(ts);
+        } finally {
+          window.__t16.frames.push({ at: +s.toFixed(1), dur: +(performance.now() - s).toFixed(2) });
+        }
+      });
+    window.__t16.mark = (name) =>
+      window.__t16.marks.push({
+        name,
+        at: +performance.now().toFixed(1),
+        framesSoFar: window.__t16.frames.length,
+        longtasksSoFar: window.__t16.longtasks.length,
+      });
+  });
+  return context;
+}
+
+async function runHarness(context, env, results) {
+  const page = await context.newPage();
+  page.on('pageerror', (e) => console.log(`  [${env.name}:harness] pageerror: ${e.message}`));
+  await applyThrottle(env, page);
+  await page.goto(HARNESS_URL, { waitUntil: 'load' });
+  results.env.ua = await page.evaluate(() => navigator.userAgent);
+  await page.waitForFunction(() => window.__t16ready === true, null, { timeout: 30000 });
+  for (const scenario of ['worker', 'compose', 'animation', 'drag', 'memory']) {
+    const t0 = Date.now();
+    try {
+      const data = await page.evaluate((name) => window.__t16run(name), scenario);
+      results.harness[scenario] = data;
+      console.log(`  [${env.name}] harness/${scenario} ok (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+    } catch (e) {
+      results.harness[scenario] = { error: String(e && e.message ? e.message : e) };
+      console.log(`  [${env.name}] harness/${scenario} FAILED: ${e.message}`);
+    }
+  }
+  if (env.engine === 'chromium') {
+    // While the harness page is still open: live worker targets after the
+    // memory scenario's churn + 8 un-terminated rebuilds (leak evidence).
+    results.harness.workersAliveAfterMemory = await countWorkerTargets(context);
+  }
+  await page.close();
+}
+
+/** Chromium-only: count live worker targets (rebuild-leak evidence). */
+async function countWorkerTargets(context) {
+  try {
+    const probe = await context.newPage();
+    const cdp = await context.newCDPSession(probe);
+    const targets = await cdp.send('Target.getTargets');
+    const count = targets.targetInfos.filter((t) => t.type === 'worker').length;
+    await cdp.detach();
+    await probe.close();
+    return count;
+  } catch (e) {
+    return `unavailable: ${e.message}`;
+  }
+}
+
+async function setSlider(page, selector, value, eventName = 'input') {
+  await page.$eval(
+    selector,
+    (el, arg) => {
+      el.value = String(arg.v);
+      el.dispatchEvent(new Event(arg.evName, { bubbles: true }));
+    },
+    { v: value, evName: eventName },
+  );
+}
+
+async function waitStageBiomes(page, timeout = 45000) {
+  // 'Biomes' label fires at fade-2 START (~2.4s of the 2.8s animation) — the
+  // app leaves the Skip button ENABLED after 'done' (observed defect), so
+  // settle is detected by label + fixed margin (>400ms fade-2 remainder).
+  await page.waitForFunction(
+    () => (document.querySelector('#stage-label')?.textContent ?? '') === 'Biomes',
+    null,
+    { timeout },
+  );
+  await sleep(700);
+}
+
+async function waitAnimStarted(page, timeout = 20000) {
+  await page.waitForFunction(
+    () => (document.querySelector('#stage-label')?.textContent ?? '') === 'Elevation',
+    null,
+    { timeout },
+  );
+}
+
+async function verifyPng(file) {
+  const buf = fs.readFileSync(file);
+  const isPng = buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  const width = isPng ? buf.readUInt32BE(16) : null;
+  const height = isPng ? buf.readUInt32BE(20) : null;
+  return { bytes: buf.length, isPng, width, height };
+}
+
+async function runApp(context, env, results) {
+  const page = await context.newPage();
+  page.on('pageerror', (e) => console.log(`  [${env.name}:app] pageerror: ${e.message}`));
+  await applyThrottle(env, page);
+  const app = { phases: {}, export: null, share: null };
+
+  await page.goto(APP_URL, { waitUntil: 'load' });
+  await page.evaluate(() => window.__t16.mark('load'));
+  await waitAnimStarted(page);
+  await waitStageBiomes(page);
+  await page.evaluate(() => window.__t16.mark('boot-animation-done'));
+
+  // Elevation drag: 30 inputs ~55ms apart, then change (commit).
+  for (let i = 0; i < 30; i++) {
+    await setSlider(page, '#elevation-input', 0.2 + (0.6 * i) / 29, 'input');
+    await sleep(55);
+  }
+  await setSlider(page, '#elevation-input', 0.8, 'change');
+  await sleep(1200);
+  await page.evaluate(() => window.__t16.mark('elevation-drag-done'));
+
+  // Moisture drag: 30 inputs ~40ms apart.
+  for (let i = 0; i < 30; i++) {
+    await setSlider(page, '#moisture-input', 0.1 + (0.8 * i) / 29, 'input');
+    await sleep(40);
+  }
+  await sleep(300);
+  await page.evaluate(() => window.__t16.mark('moisture-drag-done'));
+
+  // Dice (Generate-class regen + staged animation): wait for the NEW
+  // animation to start (label resets to 'Elevation'), then settle.
+  await page.click('#dice-button');
+  await waitAnimStarted(page);
+  await waitStageBiomes(page);
+  await page.evaluate(() => window.__t16.mark('dice-done'));
+
+  // Export PNG (T14 deferral): download fires, decodes as PNG, 512x512.
+  try {
+    const dl = page.waitForEvent('download', { timeout: 15000 });
+    await page.click('#export-button');
+    const download = await dl;
+    const file = path.join(OUT, `export-${env.name}.png`);
+    await download.saveAs(file);
+    app.export = {
+      downloaded: true,
+      suggested: download.suggestedFilename(),
+      ...(await verifyPng(file)),
+    };
+  } catch (e) {
+    app.export = { downloaded: false, error: String(e && e.message ? e.message : e) };
+  }
+  await page.evaluate(() => window.__t16.mark('export-done'));
+
+  // Share (T14 deferral): copy -> clipboard -> fresh page -> identical map.
+  try {
+    await page.click('#share-button');
+    const copied = await page
+      .waitForFunction(
+        () =>
+          (document.querySelector('#share-button')?.textContent ?? '').includes('Copied') ||
+          (document.querySelector('#share-status')?.textContent ?? '') !== '',
+        null,
+        { timeout: 8000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    let clipboardUrl = null;
+    if (env.engine === 'chromium') {
+      clipboardUrl = await page.evaluate(() => navigator.clipboard.readText());
+    }
+    const hashUrl = await page.evaluate(() => location.href);
+    app.share = {
+      copiedIndicated: copied,
+      clipboardUrl,
+      hashUrl,
+      clipboardMatchesHash: clipboardUrl ? clipboardUrl === hashUrl : null,
+    };
+
+    if (clipboardUrl) {
+      const page2 = await context.newPage();
+      await applyThrottle(env, page2);
+      await page2.goto(clipboardUrl, { waitUntil: 'load' });
+      await waitAnimStarted(page2).catch(() => {});
+      await waitStageBiomes(page2);
+      const [d1, d2, url2] = await Promise.all([
+        page.evaluate(() => document.querySelector('#map-canvas').toDataURL()),
+        page2.evaluate(() => document.querySelector('#map-canvas').toDataURL()),
+        page2.url(),
+      ]);
+      app.share.freshLoadUrl = url2;
+      app.share.mapIdentical = d1 === d2;
+      app.share.dataUrlLength = d1.length;
+      await page2.close();
+    }
+  } catch (e) {
+    app.share = { error: String(e && e.message ? e.message : e) };
+  }
+  await page.evaluate(() => window.__t16.mark('share-done'));
+
+  // Collect phase-sliced instrumentation.
+  const raw = await page.evaluate(() => window.__t16);
+  const phases = [
+    ['boot', 'load', 'boot-animation-done'],
+    ['elevation-drag', 'boot-animation-done', 'elevation-drag-done'],
+    ['moisture-drag', 'elevation-drag-done', 'moisture-drag-done'],
+    ['dice-regen-animation', 'moisture-drag-done', 'dice-done'],
+    ['export', 'dice-done', 'export-done'],
+    ['share', 'export-done', 'share-done'],
+  ];
+  const markIndex = Object.fromEntries(raw.marks.map((m) => [m.name, m]));
+  for (const [name, from, to] of phases) {
+    const a = markIndex[from];
+    const b = markIndex[to];
+    if (!a || !b) {
+      app.phases[name] = { error: 'missing marks' };
+      continue;
+    }
+    const frames = raw.frames.slice(a.framesSoFar, b.framesSoFar);
+    const tasks = raw.longtasks.slice(a.longtasksSoFar, b.longtasksSoFar);
+    app.phases[name] = {
+      wallMs: +(b.at - a.at).toFixed(0),
+      frames: frameStats(frames),
+      worstFrames: [...frames].sort((x, y) => y.dur - x.dur).slice(0, 5),
+      longtasks: tasks,
+      longestTaskMs: tasks.length ? Math.max(...tasks.map((t) => t.duration)) : 0,
+    };
+  }
+  app.longTaskSupported = raw.longTaskSupported;
+  app.totalLongtasks = raw.longtasks.length;
+  results.app = app;
+  await page.close();
+}
+
+async function main() {
+  const wanted = process.argv.slice(2);
+  for (const env of ENVS) {
+    if (wanted.length && !wanted.includes(env.name)) continue;
+    console.log(
+      `== env: ${env.name} (engine=${env.engine}, throttle=${env.throttle}x, device=${env.device ?? 'desktop'})`,
+    );
+    const browser = env.engine === 'chromium' ? await chromium.launch() : await webkit.launch();
+    const results = {
+      env: { name: env.name, engine: env.engine, throttle: env.throttle, device: env.device, resolvedDevice: null, ua: null },
+      startedAt: new Date().toISOString(),
+      harness: {},
+      app: null,
+    };
+    try {
+      const context = await makeContext(browser, env);
+      results.env.resolvedDevice = env.resolvedDevice;
+      await runHarness(context, env, results);
+      await runApp(context, env, results);
+      await context.close();
+    } catch (e) {
+      results.fatal = String(e && e.message ? e.message : e);
+      console.log(`  [${env.name}] FATAL: ${e.message}`);
+    }
+    fs.writeFileSync(path.join(OUT, `${env.name}.json`), JSON.stringify(results, null, 2));
+    await browser.close();
+    console.log(`== ${env.name} written`);
+  }
+  console.log('DONE');
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

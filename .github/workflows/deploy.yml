@@ -1,0 +1,74 @@
+# T18 — Deploy to GitHub Pages (plan decision D4).
+#
+# Trigger: push to main (plus manual workflow_dispatch for re-deploys).
+# Gate policy: full gate — npm ci, then the test suite, then the production
+# build (which itself runs `tsc --noEmit` first). The plan's T18 spec lists
+# checkout → setup-node → npm ci → build → configure-pages → upload → deploy;
+# it is silent on tests, so they were added: vitest runs in ~10s and every
+# other gate in this project runs on the full suite.
+#
+# Node 24: current Active LTS, and the exact major this project was certified
+# on locally (v24.8.0 produced the byte-identical build record). Vite 8's
+# support matrix (^20.19.0 || >=22.12.0) includes it.
+#
+# Requires (one-time, by the user): repo Settings → Pages → Source: GitHub
+# Actions. See docs/ultron/t18-deploy-runbook.md.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment pipeline at a time; a newer push to main supersedes (cancels)
+# any in-flight run. This is the group name GitHub's own Pages docs use.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
