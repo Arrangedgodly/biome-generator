@@ -1,0 +1,131 @@
+{
+  "title": "Choose the visual world",
+  "question": "The roll assigned The Survey Chart. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "The Survey Chart",
+      "kicker": "THE ROLL",
+      "lineage": "hydrographic survey sheets — NOAA/BSH chart conventions",
+      "thesis": "The generator is a survey office: every map is an issued chart — drawn in passes, keyed in the margin, corrected in magenta.",
+      "palette": ["#f5efdc", "#14324e", "#6ea3cd", "#d0558e"],
+      "materials": ["laid chart paper", "litho ink", "graticule hairlines", "stamped title block"],
+      "viewport": "A chart sheet fills the viewport inside its neatline: the map plate upper-left, the title block and survey tables ruling the right margin, the Generate action stamped in magenta.",
+      "risk": "Two-ink print discipline drifts into costume if the margins are decorated rather than working; cream paper is also where lazy vintage lands when commitment is thin.",
+      "raised": [
+        {
+          "from": "challenger-hypercard",
+          "raise": "The Same-Hand Rule — nothing on the sheet is a frozen exhibit; the chart you read is the instrument you act on. Probe, skip, and dial all happen on the artifact itself."
+        },
+        {
+          "from": "challenger-laban",
+          "raise": "The Sounding Scale — elevation reads as a ruled, exact value scale (the grayscale pass is literally a legend of levels), and the reveal's stages run as measured, equal-ruled survey passes, never loose crossfades."
+        },
+        {
+          "from": "challenger-garden",
+          "raise": "Directed Recalibration — turning a dial pours the change across the plate; input and effect connect through visible directed motion, not an instant swap."
+        },
+        {
+          "from": "challenger-cloud",
+          "raise": "One Vivid Event — the sheet stays ink-disciplined precisely so the colorization moment (the twelve biome hues landing) is the single optical event of the page; state changes mark themselves at edges, not by flooding."
+        }
+      ]
+    },
+    {
+      "id": "model-pick",
+      "label": "The False-Color Survey",
+      "kicker": "IMPECCABLE'S PICK",
+      "lineage": "Landsat/Sentinel band composites, earth-observation consoles",
+      "thesis": "The generator is a ground-station console: biomes are false-color composites, stages are band passes, the seed is a capture ID.",
+      "palette": ["#0d1b2e", "#eaf2f7", "#3a6a94", "#ffb454"],
+      "materials": ["flat instrument panels", "false-color overlays", "telemetry chips", "capture-log monospace"],
+      "viewport": "A dark console: the composite plate centered large, orbit metadata and band controls in a right-hand telemetry column, the probe reading as a live ground-station line.",
+      "risk": "The false-color idiom is what every space-flavored tool reaches for — distinctive only at full commitment — and it is another dark room, the very register you called bland."
+    },
+    {
+      "id": "challenger-dumbar",
+      "label": "The Loud Frame",
+      "verdict": "competitive",
+      "lineage": "Studio Dumbar modular identity systems",
+      "thesis": "The map is the photographed reality; a loud system of saturated bars and heavy grotesque type frames it, and the system survives every rearrangement.",
+      "palette": ["#00b7ff", "#ff2da1", "#ffd400", "#0a0a0a", "#e6e6ec"],
+      "materials": ["flat vector shards", "heavy grotesque", "snap-to-module grid"],
+      "viewport": "A neutral ground, the biome map large and level, one cyan bar shouldering the title, preset actions as stacked colored blocks that snap on hover.",
+      "case": "Fuses cleanly — the map is the photograph the system frames; holds the impact axis for design-literate visitors, loses narrowly on instrument calm.",
+      "risk": "Bars overrunning labels fight a precision tool; the grammar needs strict containment.",
+      "hero": "https://impeccable.style/worlds/cards/studio-dumbar-identity-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/studio-dumbar-identity.webp"
+    },
+    {
+      "id": "challenger-phosphor",
+      "label": "The Night Session",
+      "verdict": "competitive",
+      "lineage": "green-phosphor terminals in midnight machine rooms",
+      "thesis": "Generation is a typed session: stages print themselves as passes, the map is the session's live plot, every control is a command.",
+      "palette": ["#050a05", "#33ff66", "#1d7a3c"],
+      "materials": ["phosphor bloom", "scanline glass", "bitmap mono"],
+      "viewport": "One dark glass sheet: the plotted map as the session's output, controls as a prompt ledger down the side, the cursor breathing between passes.",
+      "case": "Fuses cleanly — the staged reveal is already a narrated log; holds the demoscene identification axis, loses on carrying twelve biome hues in a single phosphor.",
+      "risk": "Monospace-everything strains sliders and legend, and it re-darkens the register you flagged as bland.",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-phosphor-terminal-midnight-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/signals-instruments-phosphor-terminal-midnight.webp"
+    },
+    {
+      "id": "challenger-hypercard",
+      "label": "The Painted Stack",
+      "verdict": "declined",
+      "lineage": "HyperCard shoebox stacks",
+      "thesis": "The generator as a shoebox of black-and-white cards linked by painted buttons.",
+      "palette": ["#ffffff", "#000000", "#9a9a9a"],
+      "materials": ["one-bit dither", "painted buttons"],
+      "case": "Fuses poorly: a one-bit world cannot carry the twelve-hue biome palette that is the product's own data.",
+      "kept": "The Same-Hand Rule — the surface you read is the surface you act on."
+    },
+    {
+      "id": "challenger-laban",
+      "label": "The Measured Score",
+      "verdict": "declined",
+      "lineage": "Labanotation dance scores",
+      "thesis": "Terrain as a vertical staff read upward, shape as direction, shading as level.",
+      "palette": ["#ffffff", "#111111", "#c9c9c9"],
+      "materials": ["ruled staves", "level-shaded blocks"],
+      "case": "Fuses poorly: a vertical staff reads time, not terrain, and this audience does not read dance notation.",
+      "kept": "The Sounding Scale — shading encodes level exactly and durations are exact."
+    },
+    {
+      "id": "challenger-garden",
+      "label": "The Gravity Garden",
+      "verdict": "declined",
+      "lineage": "impossible gravity-rain gardens",
+      "thesis": "A surreal garden where rain falls toward whatever each cloud decrees.",
+      "palette": ["#5d7a6e", "#7fb3d5", "#c94f4f"],
+      "materials": ["directed rain", "dusk garden ground"],
+      "case": "Fuses poorly: its physics is gravity play, not terrain survey; identification collapses for both audiences.",
+      "kept": "Directed Recalibration — cause and effect connect through visible flowing motion."
+    },
+    {
+      "id": "challenger-cloud",
+      "label": "The Spectral Edge",
+      "verdict": "declined",
+      "lineage": "iridescent cloud crowns",
+      "thesis": "A plain white cloud that grows one narrow crown of mint, rose, and violet.",
+      "palette": ["#f4f6f8", "#5a6b7c", "#a8d8c8"],
+      "materials": ["pastel diffraction fringe", "plain cloud ground"],
+      "case": "Fuses poorly: a pastel fringe cannot carry instrument legibility or twelve biomes.",
+      "kept": "One Vivid Event — a disciplined plain ground that lets a single optical phenomenon own the attention."
+    }
+  ],
+  "reroll": {
+    "registers": ["safer", "bolder"]
+  },
+  "steer": true,
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "The dark app shell every map generator ships: clean grid, sliders in a card, one accent, a shadowed canvas.",
+    "palette": ["#0f172a", "#e2e8f0", "#2563eb"],
+    "materials": ["flat panels", "single accent", "soft shadow"],
+    "viewport": "Map card left, control card right, everything quiet so the map reads.",
+    "risk": "Indistinguishable from every other generator by design."
+  }
+}

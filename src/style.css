@@ -1,35 +1,50 @@
 /* ==========================================================================
-   T9 — palette application & visual polish (plan T9; research D3 + D2).
+   The False-Color Survey — ground-station chrome (redesign, seed 3ee7b067).
 
-   Dark theme derived from the committed biome palette: ocean #20658c drives
-   the accent; the canvas keeps its nearest-neighbor upscale look (D2). The
-   stylesheet styles app chrome only — the staged canvas animation (T8) owns
-   all motion on the map itself.
+   Night-navy station around one luminous composite: the map is the only
+   saturated object on the screen, acquired in bands; the chrome is telemetry
+   (mono readouts, ruler ticks, registration marks) with exactly one amber
+   signal for what is live. Flat panels and 1px steel hairlines carry all
+   depth — no shadows anywhere. The staged canvas animation owns all motion
+   that matters; the chrome settles in 150ms.
    ========================================================================== */
+
+/* Faces of the station: Archivo (aerospace grotesque) for display and UI,
+   Martian Mono for telemetry. Loaded here — not as a document <link> — so
+   the HTML stays inert for the test suite's DOMParser. */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Martian+Mono:wght@400..600&display=swap');
 
 :root {
   color-scheme: dark;
 
-  /* Palette-derived theme tokens. */
-  --bg: #111827;
-  --panel: #1f2937;
-  --panel-edge: #374151;
-  --panel-inset: #111827;
-  --text: #e5e7eb;
-  --text-muted: #9ca3af;
-  /* Foam: text/hairlines on ocean fills and the probe crosshair. */
+  /* Station palette: night-navy room, ice text, graticule steel, amber signal. */
+  --bg: #0d1b2e;
+  --panel: #122238;
+  --panel-edge: #32536f;
+  --graticule: #3a6a94;
+  --panel-inset: #081019;
+  --text: #eaf2f7;
+  --text-muted: #93a9be;
+  /* Ice hairlines on the probe crosshair (read on Snow as well as Deep Ocean). */
   --foam: #ffffff;
-  /* Ocean accent: primary fills (white text on it ≈ 6.4:1). */
-  --accent: #20658c;
-  /* Lighter ocean for focus rings: ≈ 4.7:1 on --bg, ≈ 3.9:1 on --panel
+  /* Capture amber: the one signal — primary fill (ink text ≈ 10.2:1) and
+     live readouts (≈ 9.8:1 on panel). */
+  --accent: #ffb547;
+  /* Bright amber for focus rings: ≈ 12.3:1 on --bg, ≈ 11.4:1 on --panel
      (WCAG 2.2 non-text contrast ≥ 3:1 — verified in layout.test.ts). */
-  --accent-bright: #3d8ab8;
-  /* Error surface: light red text on deep red (≈ 5.3:1), never pure red. */
-  --danger-text: #fca5a5;
-  --danger-bg: #7f1d1d;
-  --danger-edge: #b91c1c;
+  --accent-bright: #ffc97d;
+  /* Ink for text on amber fills. */
+  --accent-ink: #241300;
+  /* Error surface: light coral on deep maroon (≈ 8.8:1), never pure red. */
+  --danger-text: #ffb4a6;
+  --danger-bg: #461722;
+  --danger-edge: #8c3242;
 
-  --radius: 10px;
+  --radius: 3px;
+
+  --font-ui: 'Archivo', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Martian Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas,
+    monospace;
 }
 
 * {
@@ -42,76 +57,251 @@ body {
   padding: 0;
 }
 
+html {
+  scrollbar-color: var(--panel-edge) var(--bg);
+}
+
 body {
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.4;
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  caret-color: var(--accent);
 }
 
-/* ---- header ---------------------------------------------------------- */
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Micro-label voice: the station's panel nomenclature. */
+.panel-section,
+.meta-chip,
+.legend > summary {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.625rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* ---- mission strip ------------------------------------------------------ */
 
 #app-header {
-  padding: 0.75rem 1rem 0.5rem;
-  text-align: center;
+  width: 100%;
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 1.1rem 1.5rem 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 2rem;
+  border-bottom: 1px solid var(--panel-edge);
 }
 
-#app-header h1 {
+.mission-id h1 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 650;
-  letter-spacing: 0.01em;
+  font-size: clamp(1.4rem, 2.6vw, 1.9rem);
+  font-weight: 800;
+  font-stretch: 112%;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 #app-header .tagline {
-  margin: 0.125rem 0 0;
+  margin: 0.3rem 0 0;
   font-size: 0.8125rem;
   color: var(--text-muted);
 }
 
-/* The portfolio visitor's exit ramp — quieter than the tagline it follows. */
+.mission-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+  padding-bottom: 0.15rem;
+}
+
+.meta-line {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem 0;
+}
+
+.meta-chip {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Truth chips read as one telemetry line; the separators are structure
+ (steel), not signal — amber is spent only on what is live. */
+.meta-chip + .meta-chip::before {
+  content: '/';
+  margin: 0 0.6em;
+  color: var(--graticule);
+}
+
+/* The portfolio visitor's exit ramp — quieter than the chips it follows. */
 .source-link-wrap {
-  margin: 0.25rem 0 0;
+  margin: 0;
 }
 
 .source-link {
-  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
   color: var(--text-muted);
+  text-decoration-color: var(--panel-edge);
+  text-underline-offset: 3px;
 }
 
 .source-link:hover {
-  color: var(--text);
+  color: var(--accent-bright);
 }
 
-/* ---- main row: specimen stage (flexible) + controls (fixed column) ------- */
+/* ---- main row: raster plate (flexible) + telemetry rack (fixed) --------- */
 
-/* The stage flexes down to the panel (never wraps: the tune-and-see pairing
-   is the core interaction); below 640px the media query stacks instead. */
+/* The row never wraps: the tune-and-see pairing is the core interaction;
+   below 640px the media query stacks instead. */
 #app {
   flex: 1;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1220px;
   margin: 0 auto;
-  padding: 0.75rem 1rem 1.25rem;
+  padding: 1.5rem 1.5rem 2.5rem;
   display: flex;
   flex-wrap: nowrap;
-  gap: 1.5rem;
+  gap: 2rem;
   align-items: flex-start;
   justify-content: center;
 }
 
-/* The stage owns the canvas's old sizing; the canvas fills it 1:1 (square).
-   min-width: 0 lets the stage shrink below the canvas's intrinsic 512px in
-   the mid-range (641–975px) instead of forcing a wrap. */
+/* The stage shrinks below its basis in the mid-range (min-width: 0) instead
+   of forcing a wrap. */
 #stage {
-  position: relative; /* anchor for the probe overlay */
+  position: relative; /* anchor for the caption group's pulse probe */
   flex: 1 1 auto;
   min-width: 0;
-  width: min(90vmin, 640px);
-  max-width: 640px;
+  width: min(90vmin, 720px);
+  max-width: 720px;
+}
+
+/* ---- the raster plate ---------------------------------------------------- */
+
+/* Frame: rulers top/left, registration marks on the corners. The surface
+   inside carries the 512² composite exactly. */
+.plate {
+  position: relative;
+  margin: 0;
+  padding: 30px 10px 10px 36px;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius);
+}
+
+.plate-ruler {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.plate-ruler-top {
+  position: absolute;
+  top: 7px;
+  left: 36px;
+  right: 10px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.plate-ruler-left {
+  position: absolute;
+  top: 30px;
+  bottom: 10px;
+  left: 6px;
+  width: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+/* Minor ticks every 1/32 in hairline steel, majors every 1/8 in the
+ declared graticule steel — the measuring-tool raster. */
+.plate-ticks-top {
+  position: absolute;
+  top: 19px;
+  left: 36px;
+  right: 10px;
+  height: 5px;
+  background-image:
+    repeating-linear-gradient(to right, var(--graticule) 0 1px, transparent 1px calc(100% / 8)),
+    repeating-linear-gradient(to right, var(--panel-edge) 0 1px, transparent 1px calc(100% / 32));
+}
+
+.plate-ticks-left {
+  position: absolute;
+  top: 30px;
+  bottom: 10px;
+  left: 29px;
+  width: 5px;
+  background-image:
+    repeating-linear-gradient(to bottom, var(--graticule) 0 1px, transparent 1px calc(100% / 8)),
+    repeating-linear-gradient(to bottom, var(--panel-edge) 0 1px, transparent 1px calc(100% / 32));
+}
+
+/* Corner registration marks (L-brackets on the frame). */
+.plate-mark {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  color: var(--text-muted);
+}
+
+.plate-mark-tl {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.plate-mark-tr {
+  top: -1px;
+  right: -1px;
+  border-top: 2px solid;
+  border-right: 2px solid;
+}
+
+.plate-mark-bl {
+  bottom: -1px;
+  left: -1px;
+  border-bottom: 2px solid;
+  border-left: 2px solid;
+}
+
+.plate-mark-br {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid;
+  border-right: 2px solid;
+}
+
+/* The composite surface: exactly the canvas box (the probe overlay covers
+   it 1:1). The inset well reads as the empty raster before the first pass. */
+.plate-surface {
+  position: relative;
+  background: var(--panel-inset);
+  font-size: 0;
 }
 
 #map-canvas {
@@ -119,30 +309,24 @@ body {
   width: 100%;
   height: auto;
   aspect-ratio: 1 / 1;
-  border-radius: var(--radius);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
   image-rendering: crisp-edges; /* Firefox honors this — keep it first */
   image-rendering: pixelated; /* Chrome/Safari win with the last declaration */
-  cursor: crosshair; /* the surveyor's probe lives here (skip still works) */
-  touch-action: none; /* touch drags survey the specimen, not the page */
+  cursor: crosshair; /* the target lock lives here (skip still works) */
+  touch-action: none; /* touch drags survey the composite, not the page */
 }
 
-/* While the staged reveal plays, the canvas doubles as the skip button:
-   the cursor switches from probe to invitation. */
+/* While the bands acquire, the canvas doubles as the skip control:
+   the cursor switches from lock to invitation. */
 #map-canvas.revealing {
   cursor: pointer;
 }
 
-/* ---- surveyor's probe (crosshair overlay + readout line) ------------------ */
+/* ---- target lock (crosshair overlay + readout line) ---------------------- */
 
-/* Covers exactly the canvas: same width, same square ratio, pinned to the
-   top of the stage (below it sits the readout line). */
+/* Covers exactly the canvas: same box as .plate-surface, pinned below it. */
 #probe-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  aspect-ratio: 1 / 1;
+  inset: 0;
   pointer-events: none;
 }
 
@@ -151,7 +335,7 @@ body {
 .probe-line {
   position: absolute;
   background: var(--foam);
-  box-shadow: 0 0 2px 1px rgba(17, 24, 39, 0.65);
+  box-shadow: 0 0 2px 1px rgba(8, 16, 25, 0.75);
 }
 
 .probe-v {
@@ -166,33 +350,57 @@ body {
   height: 1px;
 }
 
-/* Reticle square centered on the probed field pixel. */
+/* Reticle square centered on the locked field pixel. */
 .probe-dot {
   position: absolute;
   width: 7px;
   height: 7px;
   border: 1px solid var(--foam);
-  box-shadow: 0 0 2px 1px rgba(17, 24, 39, 0.65);
+  box-shadow: 0 0 2px 1px rgba(8, 16, 25, 0.75);
   transform: translate(-50%, -50%);
 }
 
-/* Instrument readouts under the specimen — reserved heights, never shift.
-   The stage narrative and the probe reading form one tight caption group. */
+/* ---- caption group: pass-line + target reading --------------------------- */
+
+/* The pass-line carries a signal LED: amber while bands acquire (pulsing),
+   steady once the composite is ready. Reserved height — never shifts. */
 .stage-label {
-  margin: 0.375rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.8rem 0 0;
   min-height: 1.5em;
-  font-size: 0.8125rem;
-  color: var(--text-muted);
-  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.stage-label::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+}
+
+/* The pulse is an enhancement: it needs :has, and degrades to a steady LED. */
+#stage:has(#map-canvas[aria-busy='true']) .stage-label::before {
+  animation: led-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes led-pulse {
+  50% {
+    opacity: 0.3;
+  }
 }
 
 #probe-readout {
-  margin: 0.125rem 0 0;
+  margin: 0.3rem 0 0;
   min-height: 1.5em;
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
+  padding-left: 1.35rem; /* aligns with the pass-line text after its LED */
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   color: var(--text-muted);
-  text-align: center;
 }
 
 /* Screen-reader-only live region (keyboard probing announcements). */
@@ -204,105 +412,127 @@ body {
   clip-path: inset(50%);
 }
 
-/* ---- biome legend (the map's key, closing the caption group) ------------- */
+/* ---- biome legend (the composite's key, closing the caption group) ------- */
 
 /* One quiet line until opened; native details/summary keeps the toggle
    keyboard-accessible by virtue of the platform. */
 .legend {
-  margin: 0.5rem 0 0;
-  text-align: center;
+  margin: 0.65rem 0 0;
 }
 
 .legend > summary {
-  display: inline-block; /* the toggle hugs its label inside the centering */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   min-height: 2rem; /* same touch floor as every other control */
-  padding: 0 0.5rem;
-  font-size: 0.8125rem;
-  line-height: 2rem;
-  color: var(--text-muted);
   cursor: pointer;
+  color: var(--text-muted);
+}
+
+.legend > summary::before {
+  content: '+';
+  color: var(--graticule);
+  font-size: 0.75rem;
+}
+
+.legend[open] > summary::before {
+  content: '–';
 }
 
 .legend > summary:hover {
   color: var(--text);
 }
 
+.legend > summary:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
 .legend-swatches {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.375rem 0.875rem;
-  margin-top: 0.375rem;
+  gap: 0.4rem 1rem;
+  margin: 0.3rem 0 0.4rem 1.35rem;
 }
 
 .legend-entry {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  font-size: 0.8125rem;
+  gap: 0.45rem;
+}
+
+.legend-name {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 
-/* Pale swatches (Snow, Beach) need an edge to read on the dark stage floor. */
+/* Pale swatches (Snow, Beach) need an edge to read on the panel floor. */
 .legend-swatch {
-  width: 0.875rem;
-  height: 0.875rem;
-  border-radius: 3px;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
   border: 1px solid var(--panel-edge);
 }
 
-/* ---- controls aside ---------------------------------------------------- */
+/* ---- telemetry rack (controls aside) -------------------------------------- */
 
 #controls {
-  flex: 0 0 280px;
-  width: 280px;
+  flex: 0 0 340px;
+  width: 340px;
   min-width: 0;
 }
 
 .control-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
-  padding: 1rem;
   background: var(--panel);
   border: 1px solid var(--panel-edge);
   border-radius: var(--radius);
+  padding-top: 0.85rem;
 }
 
-/* Third rhythm level: cluster starts (actions, outputs) breathe 1.25rem
-   from the cluster above — gap 0.875 + this margin. */
-.control-row.cluster-start {
-  margin-top: 0.375rem;
+/* Module labels divide the rack; more room above than below (the rows that
+   follow carry the section's content). */
+.panel-section {
+  margin: 0.9rem 0 0.55rem;
+  padding: 0 1rem;
+  color: var(--text-muted);
+}
+
+.panel-section:first-child {
+  margin-top: 0;
+}
+
+/* Deeper separation between acquisition stages (act, then data out). */
+.panel-section + .control-row.cluster-start {
+  margin-top: 0;
 }
 
 .control-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   min-width: 0;
+  padding: 0 1rem 0.75rem;
 }
 
 .control-row > label {
-  flex: 0 0 4.75em;
-  font-size: 0.8125rem;
+  flex: 0 0 5.75em;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
-/* Range inputs: full-width, touch-height, native (keyboard-operable). */
-.control-row > input[type='range'] {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: 100%;
-  min-height: 2.5rem;
-  accent-color: var(--accent);
-}
-
+/* Readouts are the live measurement — the one amber text in the rack. */
 .readout {
-  flex: 0 0 2.5em;
+  flex: 0 0 3em;
   text-align: right;
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--accent);
 }
 
 #seed-input {
@@ -310,65 +540,128 @@ body {
   min-width: 0;
   min-height: 2.5rem;
   padding: 0 0.625rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
   color: var(--text);
   background: var(--panel-inset);
   border: 1px solid var(--panel-edge);
-  border-radius: 6px;
-  font-size: 0.9375rem;
+  border-radius: 2px;
 }
 
-/* ---- buttons ----------------------------------------------------------- */
+/* ---- instrument sliders --------------------------------------------------- */
+
+/* Native widgets (keyboard-operable for free), dressed as gain rulers:
+   a 2px steel track with minor ticks, an amber block thumb. */
+.control-row > input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  min-height: 2.5rem;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.control-row > input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  background:
+    repeating-linear-gradient(to right, var(--panel-edge) 0 1px, transparent 1px 12.5%) left center /
+      100% 6px no-repeat,
+    var(--panel-edge);
+  border-radius: 0;
+}
+
+.control-row > input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 22px;
+  margin-top: -10px;
+  background: var(--accent);
+  border: 1px solid var(--accent-ink);
+  border-radius: 1px;
+}
+
+.control-row > input[type='range']::-moz-range-track {
+  height: 2px;
+  background: var(--panel-edge);
+}
+
+.control-row > input[type='range']::-moz-range-thumb {
+  width: 10px;
+  height: 22px;
+  background: var(--accent);
+  border: 1px solid var(--accent-ink);
+  border-radius: 1px;
+}
+
+/* ---- buttons ---------------------------------------------------------------- */
 
 .control-row > button {
-  flex: 1 1 0; /* equal-basis default: overridden per row below */
   min-height: 2.5rem;
   padding: 0.5rem 0.75rem;
   font: inherit;
   color: var(--text);
   background: var(--panel-inset);
   border: 1px solid var(--panel-edge);
-  border-radius: 8px;
+  border-radius: 2px;
   cursor: pointer;
   transition:
     background-color 150ms ease,
-    border-color 150ms ease;
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
 .control-row > button:hover:not(:disabled) {
   border-color: var(--accent-bright);
 }
 
-/* Generate = primary filled action; Skip = its quiet, compact companion. */
+/* Generate = the amber acquire stamp; Skip = its quiet companion. */
 #generate-button {
   flex: 1 1 auto;
+  min-height: 2.75rem;
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
-  font-weight: 600;
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-stretch: 110%;
+  font-size: 0.9375rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 #generate-button:hover:not(:disabled) {
   background: var(--accent-bright);
+  border-color: var(--accent-bright);
 }
 
 #skip-button {
   flex: 0 0 auto;
-  font-size: 0.875rem;
-  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
 }
 
-/* 🎲 = square icon button. */
+/* 🎲 = square icon button (SVG die, the world's stroke). */
 #dice-button {
   flex: 0 0 auto;
   width: 2.5rem;
+  min-height: 2.5rem;
   padding: 0;
-  font-size: 1.125rem;
-  line-height: 1;
+  display: inline-grid;
+  place-items: center;
 }
 
-/* One-shot dice tumble on roll (delight): a full turn with a small hop —
-   the panel's only authored glyph moment. The global reduced-motion guard
-   already disables all animation, so no extra guard is needed here. */
+#dice-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* One-shot dice tumble on roll: a full turn with a small hop — the rack's
+   only authored glyph moment. The global reduced-motion guard disables it. */
 @keyframes dice-tumble {
   0% {
     transform: rotate(0deg) translateY(0);
@@ -385,31 +678,35 @@ body {
   animation: dice-tumble 380ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
-/* Quiet buttons: presets and export/share. */
+/* Quiet buttons: presets and export/share — mono, cut-out wells. */
 .control-row > button[data-preset],
 .control-row > button[data-action='export'],
 .control-row > button[data-action='share'] {
-  font-size: 0.875rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
-/* Preset chips: content-based flex + tighter type — equal-basis chips
-   overflow the 248px panel content box ("Archipelago" min-content ≈ 109px
-   × 3 > 248px); Label-size text one line, equal through shared growth. */
+.control-row > button[data-action='export'],
+.control-row > button[data-action='share'] {
+  flex: 1 1 0;
+}
+
+/* Preset modes: a 3-up module row — the longest name holds one line. */
 .control-row > button[data-preset] {
   flex: 1 1 auto;
   min-width: 0;
   padding: 0.5rem 0.25rem;
-  font-size: 0.8125rem;
 }
 
-/* A latched preset reads as pressed through two signals the quiet chips
-   don't spend: the ocean-bright edge and full text color (polish — the
-   critique found the border-only shift too weak to read). The chips are
-   already cut-outs (inset fill is the base button treatment). */
-.control-row > button[data-preset][aria-pressed='true'] {
-  border-color: var(--accent-bright);
-  color: var(--text);
+/* A latched mode spends the signals the quiet chips don't: the amber edge,
+   amber text, and a faint signal tint over the shared cut-out fill. */
+button[data-preset][aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(255, 181, 71, 0.08);
 }
 
 button:disabled,
@@ -418,16 +715,17 @@ input:disabled {
   cursor: not-allowed;
 }
 
-/* ---- error region (alert-like, WCAG-passable red-on-red) ---------------- */
+/* ---- error module (alert-like, WCAG-passable coral on maroon) -------------- */
 
 .error-region {
   display: flex;
   align-items: center;
   gap: 0.625rem;
+  margin: 0 1rem 1rem;
   padding: 0.5rem 0.75rem;
   background: var(--danger-bg);
   border: 1px solid var(--danger-edge);
-  border-radius: 8px;
+  border-radius: 2px;
   color: var(--danger-text);
   font-size: 0.875rem;
 }
@@ -445,7 +743,7 @@ input:disabled {
   color: var(--danger-text);
   background: transparent;
   border: 1px solid currentColor;
-  border-radius: 6px;
+  border-radius: 2px;
   cursor: pointer;
 }
 
@@ -456,13 +754,14 @@ input:disabled {
   overflow-wrap: anywhere;
 }
 
-/* ---- field-level validation hint (seed rule on invalid commit) ------------ */
+/* ---- field-level validation hint (seed rule on invalid commit) -------------- */
 
 /* Indented past the label column so the hint reads as part of its field. */
 .field-error {
-  margin: 0 0 0 calc(4.75em + 0.5rem);
-  font-size: 0.8125rem;
-  color: var(--danger-text); /* ≈ 7.5:1 on --panel */
+  margin: -0.35rem 0 0.75rem calc(5.75em + 0.6rem + 1rem);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--danger-text); /* ≈ 8.5:1 on --panel */
 }
 
 /* ---- manual-copy fallback (revealed only when automatic copy failed) ------- */
@@ -471,6 +770,7 @@ input:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  margin: 0 1rem 1rem;
 }
 
 /* display:flex above must not defeat the hidden attribute. */
@@ -479,19 +779,21 @@ input:disabled {
 }
 
 .share-fallback > label {
-  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 
-/* Cut-out input (The Cut-Out Rule) — a hole in the panel, like the seed field. */
+/* Cut-out well — a hole in the panel, like the seed field. */
 .share-fallback > input {
   min-height: 2.5rem;
   padding: 0 0.625rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   color: var(--text);
   background: var(--panel-inset);
   border: 1px solid var(--panel-edge);
-  border-radius: 6px;
-  font-size: 0.875rem;
+  border-radius: 2px;
 }
 
 /* ---- focus visibility (all interactive elements, ≥ 3:1 non-text) -------- */
@@ -510,34 +812,42 @@ canvas:focus-visible {
 /* ---- responsive: stacked column below 640px, usable at 375px ----------- */
 
 @media (max-width: 640px) {
+  #app-header {
+    padding: 1rem 0.875rem 0.8rem;
+  }
+
+  .mission-meta {
+    align-items: flex-start;
+  }
+
   #app {
     flex-direction: column;
     align-items: center;
     gap: 1rem;
-    padding: 0.5rem 0.75rem 1rem;
+    padding: 1rem 0.875rem 1.5rem;
   }
 
   #stage {
     width: 100%;
-    max-width: 512px;
+    max-width: 680px;
   }
 
   #controls {
     width: 100%;
-    max-width: 512px;
+    max-width: 680px;
     flex: 0 1 auto;
   }
 
   .control-row > label {
-    flex-basis: 4em;
+    flex-basis: 4.75em;
   }
 
   .field-error {
-    margin-left: calc(4em + 0.5rem);
+    margin-left: calc(4.75em + 0.6rem + 1rem);
   }
 }
 
-/* ---- reduced motion: CSS-side guard alongside T8's JS path -------------- */
+/* ---- reduced motion: CSS-side guard alongside the JS path -------------- */
 
 @media (prefers-reduced-motion: reduce) {
   *,

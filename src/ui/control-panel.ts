@@ -242,7 +242,7 @@ export function buildControlPanel(
   diceButton.type = 'button';
   diceButton.id = 'dice-button';
   diceButton.className = 'dice';
-  diceButton.textContent = '🎲';
+  diceButton.append(makeDieIcon());
   diceButton.setAttribute('aria-label', 'Randomize seed');
 
   const generateButton = makeActionButton('generate-button', 'Generate');
@@ -313,22 +313,29 @@ export function buildControlPanel(
   errorRegion.hidden = true;
   errorRegion.append(errorMessage, retryButton);
 
-  // Panel topology (layout pass): three clusters — tune (sliders + seed),
-  // act (presets + Generate), output (Export/Copy link) — with the cluster
-  // starts breathing 1.25rem from the group above (.cluster-start). The
-  // stage label leaves the panel for the map's caption block (stageHost).
+  // Panel topology (acquisition workflow): the rack reads top-to-bottom as
+  // how a capture is made — CAPTURE (which seed), FIELD BANDS (the two bands
+  // composited into biomes), SURVEY PRESETS (calibrated modes), ACQUIRE
+  // (generate/skip), DATA OUT (export/share). Section labels are module
+  // names, not content; the stage label leaves the panel for the map's
+  // caption block (stageHost).
   const presetsRow = row(...presetButtons);
   presetsRow.classList.add('cluster-start');
   const outputsRow = row(exportButton, shareButton, shareStatus);
   outputsRow.classList.add('cluster-start');
 
   root.append(
-    row(elevationSlider.label, elevationSlider.input, elevationReadout),
-    row(moistureSlider.label, moistureSlider.input, moistureReadout),
+    makeSectionLabel('Capture'),
     row(seedLabel, seedInput, diceButton),
     seedError,
+    makeSectionLabel('Field bands'),
+    row(elevationSlider.label, elevationSlider.input, elevationReadout),
+    row(moistureSlider.label, moistureSlider.input, moistureReadout),
+    makeSectionLabel('Survey presets'),
     presetsRow,
+    makeSectionLabel('Acquire'),
     row(generateButton, skipButton),
+    makeSectionLabel('Data out'),
     outputsRow,
     shareFallback,
     errorRegion,
@@ -684,6 +691,50 @@ export function buildControlPanel(
     button.id = id;
     button.textContent = text;
     return button;
+  }
+
+  /** Rack module label — the panel's section nomenclature (styled small-caps). */
+  function makeSectionLabel(text: string): HTMLParagraphElement {
+    const label = document.createElement('p');
+    label.className = 'panel-section';
+    label.textContent = text;
+    return label;
+  }
+
+  /**
+   * Authored die glyph (SVG, the world's stroke — no emoji): a five-pip face
+   * standing in for the random-seed roll. Decorative; the button's aria-label
+   * carries the meaning.
+   */
+  function makeDieIcon(): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 20 20');
+    svg.setAttribute('aria-hidden', 'true');
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', '2');
+    rect.setAttribute('y', '2');
+    rect.setAttribute('width', '16');
+    rect.setAttribute('height', '16');
+    rect.setAttribute('rx', '2.5');
+    rect.setAttribute('fill', 'none');
+    rect.setAttribute('stroke', 'currentColor');
+    rect.setAttribute('stroke-width', '1.5');
+    svg.append(rect);
+    for (const [cx, cy] of [
+      [6.5, 6.5],
+      [13.5, 6.5],
+      [10, 10],
+      [6.5, 13.5],
+      [13.5, 13.5],
+    ]) {
+      const pip = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      pip.setAttribute('cx', String(cx));
+      pip.setAttribute('cy', String(cy));
+      pip.setAttribute('r', '1.4');
+      pip.setAttribute('fill', 'currentColor');
+      svg.append(pip);
+    }
+    return svg;
   }
 
   function row(...children: HTMLElement[]): HTMLElement {
